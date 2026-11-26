@@ -16,6 +16,14 @@ list and pushes each new step to both pages over a WebSocket.
   the room is at. Otherwise the relay answers with a fresh `sync`, and the page reconciles
   (`web/ui/src/game/online.ts`).
 * `GET /rooms/<room>?seat=<secret>`: the game so far as JSON (seed and steps), for a script.
+* `POST /rooms/<room>/push?seat=<secret>` `{subscription, url}`: notify this phone when it is the
+  seat's move (at most 4 phones a seat), and `GET /push-key`: the VAPID public key to subscribe with.
+  A `move` may carry `next: {side, note}`. When `side` is the other seat and that seat is not
+  "here" (no socket whose page is in front of its player), the relay sends each of its phones a Web
+  Push (`src/push.ts`: RFC 8291 encryption, RFC 8292 VAPID, on WebCrypto; only to known push
+  services). A 404 or 410 drops the subscription.
+* Presence: each socket's `visible` message makes its seat `here`, `away` or `offline` (`seen` in
+  `sync` and `presence`). An `activity` message is passed to the other seat and not kept.
 * `GET /health`: `{"ok": true}`.
 
 **Trust.** This is for friends. Both pages know the seed, so a player who reads the page's memory
@@ -40,6 +48,11 @@ npm install
 npx wrangler login
 npx wrangler deploy          # prints the Worker's URL: https://ts-play-relay.<subdomain>.workers.dev
 ```
+
+For turn notifications, make a VAPID key pair (P-256): put its public key (uncompressed point,
+base64url) in `wrangler.toml` as `VAPID_PUBLIC`, and its private JWK in the secret:
+`npx wrangler secret put VAPID_PRIVATE_JWK < private.jwk.json`. Without them the relay sends no pushes,
+and the page's bell does not appear to work (`/push-key` answers 404).
 
 Then point the page at it. Set the repository variable `TS_PLAY_ENDPOINT` (Settings → Secrets and
 variables → Actions → Variables) to the Worker's URL; `.github/workflows/pages.yml` passes it to

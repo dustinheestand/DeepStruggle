@@ -638,6 +638,18 @@ web/ui/
      not seen before (`revealed`: a card leaving the view's UNSEEN pile) is tried, taken back unseen,
      and played only after a confirmation, then sent at once. When the decision passes to the other
      side, *Send move* hands it over, so the last point of a move can still be taken back.
+   - **Presence and activity**: the other player's dot is green (their page in front of them), yellow
+     (open behind something: a background tab, a locked phone) or red (not connected), from each
+     socket's `visible` (`OnlineGame.setVisible`, on `visibilitychange`). Each tap (`pointerdown`)
+     sends a content-free `activity`, at most every 2 s, which the other page shows as a pulse.
+   - **Turn notifications (Web Push)**: the page is installable (`public/manifest.webmanifest`, no
+     `start_url`, so a Home Screen app opens the seat it was added from; `public/sw.js` shows a push
+     and opens its seat). The 🔔 in the status line subscribes (`pushKey`, `subscribeSeat`); on an
+     iPhone outside the Home Screen it explains the install instead. The last batch of a send carries
+     `next` (`OnlineHost.next`: who moves now, and the mover's last play as the next player's view
+     reads it -- a face-down headline stays face down); the relay pushes to that seat's phones when
+     that seat is not "here". The start screen lists this device's games (`ts.play.games`) and takes
+     a pasted link, since an installed app keeps its own storage.
 
 ---
 
