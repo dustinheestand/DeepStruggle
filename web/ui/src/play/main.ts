@@ -73,6 +73,8 @@ class PlayApp {
   private scores: RegionScores | null = null;
   private viewSide: Seat = "US";
   private wasMine = false;
+  /** The online game started or played steps since the board was drawn. */
+  private boardDirty = true;
   private collapsed = false;
   private baseTitle = document.title;
 
@@ -148,6 +150,7 @@ class PlayApp {
       steps: () => sessionSteps(s),
       start: (seed, _side, roomEngine) => {
         startOnlineGame(s, seed);
+        this.boardDirty = true;
         this.committed = 0;
         if (roomEngine && roomEngine !== this.engine.fingerprint) {
           this.toast(t("app:online.otherEngine", { room: roomEngine.slice(0, 8), page: this.engine.fingerprint.slice(0, 8) }), 8000);
@@ -155,10 +158,16 @@ class PlayApp {
       },
       apply: (steps) => {
         const why = applyWireSteps(s, steps);
+        this.boardDirty = true;
         if (!why) this.committed = s.steps.length;
         return why;
       },
-      changed: () => this.update(false),
+      // Presence and the connection redraw the status line only: a redraw of the board under a
+      // finger would swallow the tap.
+      changed: () => {
+        if (this.full && !this.boardDirty) this.renderStatus();
+        else this.update(false);
+      },
       pushable: () => this.committed,
     });
     this.renderStatus();
@@ -261,6 +270,7 @@ class PlayApp {
     }
     const full = this.session.state();
     this.full = full;
+    this.boardDirty = false;
     if (this.me) this.viewSide = this.me;
     else this.viewSide = deciderOf(full) ?? this.viewSide;
     const shown = redactState(full, this.viewSide);
