@@ -12,6 +12,7 @@ WebAssembly, models as ONNX -- so `dist/` works from GitHub Pages as well as fro
 ```
 web/ui/
 ├── index.html                  # Workbench layout (Top Bar; cards | SVG Map | HUD rail; Bottom Drawer)
+├── play.html                   # The phone page: a game against a friend in summaries (src/play/)
 ├── leaderboard.html            # The Elo leaderboard page (src/leaderboard_page.ts, src/leaderboard.css)
 ├── package.json                # Dependencies and build scripts
 ├── vite.config.ts              # base path (TS_WEB_BASE, for Pages), /api proxy, the two pages,
@@ -37,6 +38,8 @@ web/ui/
 │   │                           # resume.ts (a reload's playback: models' bits, person rules),
 │   │                           # online.ts / online_protocol.ts / online_session.ts (a game
 │   │                           # against a friend through the play relay, web/play_worker/)
+│   ├── play/                   # the phone page (play.html): main.ts (summaries, decision, take-backs),
+│   │                           # summary.ts (region counts, each play's upshot; no DOM), play.css
 │   ├── result_dialog.ts        # Game over: the result, how it was played, submit to the stats database
 │   ├── build_info.ts           # the commit the page was built from, the stats endpoint
 │   ├── analysis/               # model.ts (ONNX sources + onnxruntime-web), hf_catalog.ts (the
@@ -609,6 +612,32 @@ web/ui/
    - **Tested** by `tests/web/test_online_play.py`: two pages and an in-memory relay running
      `web/play_worker/src/room.ts` play a whole game with disconnects, offline moves and a
      corrupted list, then end where the relay's list played from the seed ends.
+   - The workbench's invite link opens the friend's seat on the phone page (`play.html`); both
+     pages serve the same rooms.
+13. **The phone page (`play.html`, `src/play/`)**: the game against a friend (or both sides on
+    one device, *Practice*) in summaries instead of the map.
+   - **Top strip**: turn and round, DEFCON, VP, Mil Ops, Space Race, China Card; the connection
+     and whose move it is (the tab title too; a vibration on Android when it becomes yours).
+   - **Board**: a tile per region -- each side's `battlegrounds-countries` controlled, as the
+     engine's scoring counts them (`regionScores`), US blue / USSR red; the standings, the net if
+     scored now, where its scoring card is as you may know it (`cardWhere`), the open decision's
+     targets there, ● where the other side's last turn changed something (`lastTurnOf`). Above
+     them, *Since your last move*: the other side's plays since yours. A tap opens the region's
+     countries as rows (battleground, stability, the two Influence boxes filled for the
+     controller) with the target buttons. Neighbours are not shown: the owner's players know the
+     map, and it would crowd the rows.
+   - **History**: every play newest first (`groupLog` over the log as your view may read it), each
+     with its upshot (`summary.ts history`): `Asia 2-5/2-5 → 3-6/2-5`, the Influence each country
+     gained or lost, VP, DEFCON; a tap shows the play's full lines. The upshots chained take the
+     start to the end exactly (`tests/web/test_play_summary.py`).
+   - **The decision** is the workbench's HUD (`ActionHud`, every decision type), plus the playable
+     cards when a card is to be chosen (a tap shows its text and *Play*).
+   - **Take-backs (the owner's rule)**: undo is free until new information is revealed, and the end
+     of a move needs confirming. Online, steps stay on the page until sent
+     (`OnlineHost.pushable`); *Undo* takes them back. A step that would roll a die or show a card
+     not seen before (`revealed`: a card leaving the view's UNSEEN pile) is tried, taken back unseen,
+     and played only after a confirmation, then sent at once. When the decision passes to the other
+     side, *Send move* hands it over, so the last point of a move can still be taken back.
 
 ---
 

@@ -1,6 +1,7 @@
 # The play relay (`web/play_worker/`)
 
-Two people playing each other in the workbench, each in their own browser (a phone included). Each
+Two people playing each other, each in their own browser: on the phone page (`play.html`) or in
+the workbench, which serve the same rooms. Each
 page runs the engine itself. The game is a seed plus the list of steps both pages have agreed on,
 and the dice come from the seed through the engine's PRNG, so the relay only passes steps around.
 It never runs the engine. This Cloudflare Worker keeps one Durable Object per game, which holds that

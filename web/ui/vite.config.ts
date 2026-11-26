@@ -39,12 +39,14 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    // Two pages: the workbench, and the Elo leaderboard (its data, public/leaderboard.json, is
+    // Three pages: the workbench, the phone page (play.html), and the Elo leaderboard (its data, public/leaderboard.json, is
     // fitted from leaderboard/ by tools/scripts/build_web.sh).
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
         leaderboard: resolve(__dirname, 'leaderboard.html'),
+        // The phone page: a game against a friend in summaries (src/play/).
+        play: resolve(__dirname, 'play.html'),
       },
     },
   },

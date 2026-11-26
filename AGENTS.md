@@ -268,8 +268,9 @@ fits each model player's rating on Playdek's scale from the clean games
 
 Two people can **play each other online**, each in their own browser. Each page runs the engine.
 A Cloudflare Worker with one Durable Object per game keeps the agreed list of steps and passes it
-between the two pages; the dice come from the room's seed, so it never runs the engine
-([`web/play_worker/README.md`](web/play_worker/README.md), `web/ui/AGENTS.md` §3.12).
+between the two pages; the dice come from the room's seed, so it never runs the engine. The phone
+page (`web/ui/play.html`) shows that game in summaries -- region counts, each play's upshot -- for phones
+([`web/play_worker/README.md`](web/play_worker/README.md), `web/ui/AGENTS.md` §3.12-13).
 
 ### 3.4 CLIs
 

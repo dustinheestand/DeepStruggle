@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b1220" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>Twilight Struggle</title>
+  </head>
+  <body class="play">
+    <!-- The phone page (src/play/main.ts): the game in summaries -- the tracks, each region's
+         battlegrounds and countries, the hand, what happened -- one region's countries on a tap. -->
+    <header id="play-top" class="play-top">
+      <div id="play-tracks" class="play-tracks"></div>
+      <div id="play-status" class="play-status"></div>
+      <nav class="play-tabs" role="tablist">
+        <button class="play-tab" data-tab="board" role="tab">Board</button>
+        <button class="play-tab" data-tab="hand" role="tab">Hand</button>
+        <button class="play-tab" data-tab="history" role="tab">History</button>
+      </nav>
+    </header>
+
+    <main id="play-main" class="play-main"></main>
+
+    <!-- The open decision: the workbench's own HUD (action_hud.ts renders into #decision-body),
+         plus the hand when a card is to be chosen, and the take-back / send buttons. -->
+    <section id="play-decision" class="play-decision">
+      <div class="play-decision-head">
+        <span id="decision-type-badge" class="badge"></span>
+        <span id="play-commit" class="play-commit"></span>
+      </div>
+      <div id="decision-body" class="play-decision-body"></div>
+      <div id="play-decision-cards" class="play-decision-cards"></div>
+    </section>
+
+    <!-- A bottom sheet: a card's text, the invite link, the start choices. -->
+    <div id="play-sheet" class="play-sheet hidden" role="dialog" aria-modal="true">
+      <div class="play-sheet-panel">
+        <button id="play-sheet-close" class="play-sheet-close" aria-label="Close">✕</button>
+        <div id="play-sheet-body"></div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/play/main.ts"></script>
+  </body>
+</html>

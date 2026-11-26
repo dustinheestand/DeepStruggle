@@ -1569,8 +1569,9 @@ export class TSApp {
     this.showInvite();
   }
 
+  /** The friend's seat on the phone page (play.html), which the same room serves. */
   private inviteLink(): string {
-    return seatLink(window.location.href, this.onlineRoom, this.onlineInvite);
+    return seatLink(new URL("play.html", window.location.href).href, this.onlineRoom, this.onlineInvite);
   }
 
   private showInvite() {

@@ -37,6 +37,9 @@ export interface OnlineHost {
   apply(steps: WireStep[]): string | null;
   /** The board, the status or the presence changed. */
   changed(): void;
+  /** How many of `steps()` may be sent: the rest are the player's still to confirm (play.html keeps a
+   *  move it can take back until it is sent). All of them when absent. */
+  pushable?(): number;
 }
 
 export type OnlineStatus = "connecting" | "online" | "offline" | "desync";
@@ -108,8 +111,9 @@ export class OnlineGame {
   push(): void {
     if (!this.connected || !this.link || this.status === "desync") return;
     const local = this.host.steps();
-    while (this.sent < local.length) {
-      const batch = local.slice(this.sent, this.sent + MAX_BATCH);
+    const limit = Math.min(local.length, this.host.pushable?.() ?? local.length);
+    while (this.sent < limit) {
+      const batch = local.slice(this.sent, Math.min(limit, this.sent + MAX_BATCH));
       this.link.send({ t: "move", at: this.sent, steps: batch });
       this.sent += batch.length;
     }
