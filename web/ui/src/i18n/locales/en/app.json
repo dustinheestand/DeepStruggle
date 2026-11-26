@@ -144,7 +144,12 @@
     "notifyTitle": "Notifications",
     "notifyInstall": "On an iPhone, notifications need the game on your Home Screen: tap Share, then Add to Home Screen, open the game from there, and tap 🔔 again.",
     "notifyOn": "You will be notified when it is your move.",
-    "notifyDenied": "notifications are not allowed for this site",
+    "notifyBlocked": "Notifications are turned off for this site on this device, so the page cannot ask again. Turn them on in the device's settings, then reload and tap 🔔.",
+    "unblock": {
+      "ios": "On an iPhone: open the Settings app → Notifications → Twilight (the Home Screen app) → Allow Notifications. If Twilight is not listed, open the game from its Home Screen icon and tap 🔔 there.",
+      "android": "On Android Chrome: tap the icon left of the address (or ⋮ → Settings → Site settings → Notifications), find dustinheestand.github.io and choose Allow. For the installed app: long-press its icon → App info → Notifications.",
+      "desktop": "In the browser: click the icon left of the address → Notifications → Allow (Chrome: Settings → Privacy and security → Site settings → Notifications)."
+    },
     "notifyNoRelay": "the relay sends no notifications",
     "notifyFailed": "Notifications could not be turned on: {{error}}",
     "yourGames": "Your games",

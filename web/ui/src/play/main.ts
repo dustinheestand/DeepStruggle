@@ -273,7 +273,7 @@ class PlayApp {
     return `ts.play.notify.${this.room}`;
   }
 
-  private notifyState(): "on" | "ask" | "install" | "none" {
+  private notifyState(): "on" | "ask" | "install" | "blocked" | "none" {
     if (!this.online || !this.me) return "none";
     try {
       if (localStorage.getItem(this.notifyKey)) return "on";
@@ -282,7 +282,7 @@ class PlayApp {
     const standalone = (navigator as unknown as { standalone?: boolean }).standalone === true ||
       matchMedia("(display-mode: standalone)").matches;
     if (!("PushManager" in window) || !("serviceWorker" in navigator)) return ios && !standalone ? "install" : "none";
-    if (typeof Notification !== "undefined" && Notification.permission === "denied") return "none";
+    if (typeof Notification !== "undefined" && Notification.permission === "denied") return "blocked";
     return "ask";
   }
 
@@ -292,9 +292,13 @@ class PlayApp {
       this.sheet(`<h2>${t("app:play.notifyTitle")}</h2><p>${t("app:play.notifyInstall")}</p>`);
       return;
     }
+    if (state === "blocked") return this.notifyBlocked();
     if (state !== "ask") return;
     try {
-      if ((await Notification.requestPermission()) !== "granted") throw new Error(t("app:play.notifyDenied"));
+      const answer = await Notification.requestPermission();
+      // Denied -- or never asked (Chrome blocks a prompt it judges unwanted, quietly): only the
+      // device's settings can change it now, so say where.
+      if (answer !== "granted") return this.notifyBlocked();
       const key = await pushKey(PLAY_ENDPOINT);
       if (!key) throw new Error(t("app:play.notifyNoRelay"));
       const reg = await navigator.serviceWorker.ready;
@@ -307,6 +311,15 @@ class PlayApp {
     } catch (e) {
       this.toast(t("app:play.notifyFailed", { error: e instanceof Error ? e.message : String(e) }), 6000);
     }
+    this.renderStatus();
+  }
+
+  /** Notifications are off for this site: where this device turns them back on. */
+  private notifyBlocked() {
+    const ua = navigator.userAgent;
+    const how = /iPhone|iPad|iPod/.test(ua) ? t("app:play.unblock.ios")
+      : /Android/.test(ua) ? t("app:play.unblock.android") : t("app:play.unblock.desktop");
+    this.sheet(`<h2>${t("app:play.notifyTitle")}</h2><p>${t("app:play.notifyBlocked")}</p><p>${how}</p>`);
     this.renderStatus();
   }
 
@@ -501,6 +514,7 @@ class PlayApp {
     }
     const bell = this.notifyState();
     if (bell === "ask" || bell === "install") text += ` <button class="btn btn-bell" data-notify>${t("app:play.notify")}</button>`;
+    else if (bell === "blocked") text += ` <button class="btn btn-bell" data-notify title="${escapeHtml(t("app:play.notifyBlocked"))}">🔕</button>`;
     else if (bell === "on") text += ` <span class="play-dim" title="${escapeHtml(t("app:play.notifyOn"))}">🔔</span>`;
     el.innerHTML = text;
     el.classList.toggle("mine", mine && !this.practice);
