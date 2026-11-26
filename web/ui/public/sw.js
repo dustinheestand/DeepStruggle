@@ -11,14 +11,25 @@ self.addEventListener("push", (e) => {
   } catch {
     d = { body: e.data ? e.data.text() : "" };
   }
-  e.waitUntil(self.registration.showNotification(d.title || "Twilight Struggle", {
-    body: d.body || "Your move",
-    tag: d.tag || "ts-move",
-    renotify: true,
-    icon: "icon-192.png",
-    badge: "icon-192.png",
-    data: { url: d.url || "play.html" },
-  }));
+  e.waitUntil((async () => {
+    let error = "";
+    try {
+      await self.registration.showNotification(d.title || "Twilight Struggle", {
+        body: d.body || "Your move",
+        tag: d.tag || "ts-move",
+        renotify: true,
+        icon: "icon-192.png",
+        badge: "icon-192.png",
+        data: { url: d.url || "play.html" },
+      });
+    } catch (err) {
+      error = String(err);
+    }
+    // Open pages hear of it too (a diagnostic, and a page may redraw).
+    for (const c of await self.clients.matchAll({ type: "window", includeUncontrolled: true })) {
+      c.postMessage({ t: "push", body: d.body || "", error });
+    }
+  })());
 });
 
 self.addEventListener("notificationclick", (e) => {

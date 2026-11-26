@@ -274,6 +274,7 @@ export class Room extends DurableObject<Env> {
     if (!env.VAPID_PUBLIC || !env.VAPID_PRIVATE_JWK) return;
     if (this.seen()[next.side] === "here") return;
     const targets = d.push?.[next.side] ?? [];
+    console.log(`${next.side} to move: ${targets.length} phone(s) to tell`);
     if (!targets.length) return;
     const vapid = {
       subject: env.VAPID_SUBJECT || "https://github.com/",
@@ -290,11 +291,10 @@ export class Room extends DurableObject<Env> {
       };
       try {
         const status = await sendPush(t.subscription, payload, vapid);
+        console.log(`push to ${new URL(t.subscription.endpoint).host}: HTTP ${status}`);
         if (status === 404 || status === 410) {
           removePushTarget(d, next.side, t.subscription.endpoint);
           changed = true;
-        } else if (status >= 400) {
-          console.warn(`push to ${new URL(t.subscription.endpoint).host}: HTTP ${status}`);
         }
       } catch (e) {
         console.warn("push failed:", e);
