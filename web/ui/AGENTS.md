@@ -651,8 +651,14 @@ web/ui/
      iPhone outside the Home Screen it explains the install instead. The last batch of a send carries
      `next` (`OnlineHost.next`: who moves now, and the mover's last play as the next player's view
      reads it -- a face-down headline stays face down); the relay pushes to that seat's phones when
-     that seat is not "here". The start screen lists this device's games (`ts.play.games`) and takes
-     a pasted link, since an installed app keeps its own storage.
+     that seat is not "here". The start screen lists this device's games (`ts.play.games`; ☰ in the
+     tabs opens it) and takes a pasted link, since an installed app keeps its own storage. Each game's
+     state -- turn, round, VP, whose move, or how it ended -- is its relay steps played in the page's
+     engine (`fetchRoom`, `gameState`), games waiting on you first. *Abandon* (`abandonRoom`) marks
+     the room abandoned on the relay: no more moves or pushes, both lists drop it, the game shows
+     "Abandoned by …", and its steps stay; a finished game's *Remove* only forgets it here.
+   - **Region view**: the countries as a grid of cards (short names as on the map, `SHORT_NAMES`),
+     the stability and both Influence boxes on each; a target's whole card is the button.
 
 ---
 

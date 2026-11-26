@@ -125,7 +125,7 @@ const MAX_VIEW_W = 2000;
 const DRAG_SLOP = 6;
 
 /** Names too long for the band even squeezed; the hover card gives the full one. */
-const SHORT_NAMES: Record<string, string> = {
+export const SHORT_NAMES: Record<string, string> = {
   "United Kingdom": "UK",
   "West Germany": "W. Germany",
   "East Germany": "E. Germany",

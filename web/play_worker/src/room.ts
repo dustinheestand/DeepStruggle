@@ -8,7 +8,7 @@
  * room is at, so the list cannot fork.
  */
 import {
-  ClientMessage, MAX_BATCH, MAX_NOTE, MAX_STEPS, NextToMove, Presence, PushSubscriptionJSON, RoomSnapshot, SEAT_NAMES, Seat,
+  Abandoned, ClientMessage, MAX_BATCH, MAX_NOTE, MAX_STEPS, NextToMove, Presence, PushSubscriptionJSON, RoomSnapshot, SEAT_NAMES, Seat,
   ServerMessage, WireStep, isSeat, isWireStep,
 } from "../../ui/src/game/online_protocol";
 
@@ -22,6 +22,8 @@ export interface RoomData {
   steps: WireStep[];
   /** Each seat's phones to tell when it is that seat's move, with the seat's page to open. */
   push?: Partial<Record<Seat, PushTarget[]>>;
+  /** Set once a player abandons the game: no more moves, no more pushes. */
+  abandoned?: Abandoned;
 }
 
 export interface PushTarget {
@@ -57,7 +59,8 @@ export function seatOf(d: RoomData, secret: string | null): Seat | null {
 }
 
 export function syncMessage(d: RoomData, side: Seat, seen: Record<Seat, Presence>): ServerMessage {
-  return { t: "sync", seed: d.seed, engine: d.engine, side, steps: d.steps, online: onlineOf(seen), seen };
+  return { t: "sync", seed: d.seed, engine: d.engine, side, steps: d.steps, online: onlineOf(seen), seen,
+           ...(d.abandoned ? { abandoned: d.abandoned } : {}) };
 }
 
 /** Connected at all, from the presences (what pages before `seen` read). */
@@ -76,7 +79,8 @@ export function presenceOf(sockets: Array<{ side: Seat; visible: boolean }>): Re
 }
 
 export function snapshot(d: RoomData, side: Seat): RoomSnapshot {
-  return { room: d.room, seed: d.seed, engine: d.engine, created: d.created, side, steps: d.steps };
+  return { room: d.room, seed: d.seed, engine: d.engine, created: d.created, side, steps: d.steps,
+           ...(d.abandoned ? { abandoned: d.abandoned } : {}) };
 }
 
 /** Parse a page's message. */
@@ -104,6 +108,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
 /** Append `msg`'s steps if they start where the room is; changes `d` only when they do. */
 export function applyMove(d: RoomData, msg: Extract<ClientMessage, { t: "move" }>, by: Seat): MoveResult {
+  if (d.abandoned) return { kind: "bad", why: "the game was abandoned" };
   if (msg.at !== d.steps.length) return { kind: "stale" };
   if (d.steps.length + msg.steps.length > MAX_STEPS) return { kind: "bad", why: "the game is too long" };
   d.steps.push(...msg.steps.map(s => [...s] as WireStep));

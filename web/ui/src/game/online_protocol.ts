@@ -39,6 +39,13 @@ export interface RoomSnapshot {
   created: string;
   side: Seat;
   steps: WireStep[];
+  abandoned?: Abandoned;
+}
+
+/** A game one player gave up on: it leaves both players' lists; its steps are kept. */
+export interface Abandoned {
+  by: Seat;
+  at: string;
 }
 
 /** A seat's presence: its page open in front of its player, open behind something (a background
@@ -47,12 +54,13 @@ export type Presence = "here" | "away" | "offline";
 
 export type ServerMessage =
   /** On connecting, and again whenever the page's view of the list is out of date. */
-  | { t: "sync"; seed: number; engine: string; side: Seat; steps: WireStep[]; online: Record<Seat, boolean>; seen?: Record<Seat, Presence> }
+  | { t: "sync"; seed: number; engine: string; side: Seat; steps: WireStep[]; online: Record<Seat, boolean>; seen?: Record<Seat, Presence>; abandoned?: Abandoned }
   /** Steps appended at `at`, by `by`: sent to both pages, so the mover's copy is its ack. */
   | { t: "moves"; at: number; steps: WireStep[]; by: Seat }
   | { t: "presence"; online: Record<Seat, boolean>; seen?: Record<Seat, Presence> }
   /** The other player tapped something: no more than that (play.html shows a pulse). */
   | { t: "activity"; by: Seat }
+  | ({ t: "abandoned" } & Abandoned)
   | { t: "error"; why: string };
 
 /** Who moves after a move, as the mover's page sees it: the relay tells that player's phone (Web

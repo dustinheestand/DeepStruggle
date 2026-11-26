@@ -441,3 +441,47 @@ body.play-starting .play-decision { display: none; }
 .play-main { overscroll-behavior-y: contain; }
 /* The way back to this device's games, at the end of the tabs. */
 .play-games { flex: 0 0 44px; text-align: center; text-decoration: none; }
+
+/* One region's countries as cards: battlegrounds' names in purple, the controller's box filled, a
+   target's whole card a button (outlined, its action tagged in the name row). */
+.ccards { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; margin-top: 8px; }
+.ccard {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 5px 6px 6px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ccard-head { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.ccard-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ccard-bg .ccard-name { color: #d8b4fe; }
+.ccard-row { display: grid; grid-template-columns: auto 1fr 1fr; gap: 4px; align-items: center; }
+.ccard-row .stab { margin: 0; }
+.ccard .inf { height: 26px; font-size: 15px; }
+.ccard-legal { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; cursor: pointer; }
+.ccard-legal:active { background: var(--panel-2); }
+.ccard-act {
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: #1d4ed8;
+  border-radius: 4px;
+  padding: 0 5px;
+}
+
+/* This device's games: state, and the way to drop one. */
+.game-item { display: flex; gap: 8px; align-items: center; }
+.game-item .game-link { flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
+.game-line { display: flex; gap: 8px; align-items: baseline; }
+.game-side { font-weight: 700; }
+.game-state { font-size: 13px; }
+.game-date { font-size: 11px; }
+.game-mine .game-link { border-color: var(--accent); }
+.game-drop { min-height: 32px; font-size: 12px; padding: 4px 10px; }

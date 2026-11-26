@@ -15,7 +15,10 @@ list and pushes each new step to both pages over a WebSocket.
   pages, so the mover's copy acts as its ack) and `presence`. A `move` is appended only at the index
   the room is at. Otherwise the relay answers with a fresh `sync`, and the page reconciles
   (`web/ui/src/game/online.ts`).
-* `GET /rooms/<room>?seat=<secret>`: the game so far as JSON (seed and steps), for a script.
+* `GET /rooms/<room>?seat=<secret>`: the game so far as JSON (seed, steps, `abandoned`), for a
+  script or the phone page's list of games.
+* `POST /rooms/<room>/abandon?seat=<secret>`: give the game up. The relay refuses further moves, sends
+  no more pushes, and tells both pages (`abandoned`); the steps stay.
 * `POST /rooms/<room>/push?seat=<secret>` `{subscription, url}`: notify this phone when it is the
   seat's move (at most 4 phones a seat), and `GET /push-key`: the VAPID public key to subscribe with.
   A `move` may carry `next: {side, note}`. When `side` is the other seat and that seat is not

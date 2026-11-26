@@ -26,8 +26,8 @@ import { GameState, MicroAction, RegionScores, RegionalStatus } from "../types";
 import { ActionHud } from "../action_hud";
 import { redactState } from "../game/view";
 import { lastTurnOf } from "../game/last_turn";
-import { OnlineGame, createRoom, pushKey, roomSocketUrl, seatLink, subscribeSeat, webSocketConnect } from "../game/online";
-import { Seat, otherSeat } from "../game/online_protocol";
+import { OnlineGame, abandonRoom, createRoom, fetchRoom, pushKey, roomSocketUrl, seatLink, subscribeSeat, webSocketConnect } from "../game/online";
+import { RoomSnapshot, Seat, otherSeat } from "../game/online_protocol";
 import { applyWireSteps, sessionSteps, startOnlineGame } from "../game/online_session";
 import { PLAY_ENDPOINT } from "../build_info";
 import { CARDS_METADATA, MAP_METADATA } from "../metadata";
@@ -36,6 +36,7 @@ import { lineHtml, messageHtml } from "../game/log";
 import { groupLog } from "../game/log_view";
 import { effectNameMessage } from "../cards_view";
 import { spaceRaceBoxes } from "../tracks_view";
+import { SHORT_NAMES } from "../map_view";
 import { cardDescription, cardName, countryName, initLanguage, regionName, renderEnglish, sideName, t } from "../i18n";
 import {
   Count, HistoryEntry, countriesById, REGIONS, SCORING_CARDS, SE_ASIA, Upshot, cardWhere, countText, history, regionCountries,
@@ -70,6 +71,12 @@ function loadGames(): SavedSeat[] {
   } catch {
     return [];
   }
+}
+
+function forgetGame(room: string): void {
+  try {
+    localStorage.setItem(GAMES_KEY, JSON.stringify(loadGames().filter(g => g.room !== room)));
+  } catch { /* no storage */ }
 }
 
 /** A VAPID key (base64url) as PushManager.subscribe takes it. */
@@ -156,6 +163,9 @@ class PlayApp {
       <button class="btn btn-secondary btn-big" data-start="practice">${t("app:play.practice")}</button>
       <p class="play-legend"><a class="play-dim" href="./?workbench">${t("app:play.workbench")}</a></p>
     </div>`;
+    void this.fillGames();
+    this.main().querySelectorAll<HTMLButtonElement>("[data-drop]").forEach(b => b.addEventListener("click", () =>
+      void this.dropGame(b.dataset.drop!, b.dataset.over === "1")));
     this.main().querySelector<HTMLFormElement>("[data-paste]")?.addEventListener("submit", e => {
       e.preventDefault();
       const raw = String(new FormData(e.target as HTMLFormElement).get("link") || "").trim();
@@ -193,15 +203,100 @@ class PlayApp {
    *  app keeps storage apart from its browser, so a link from a message lands in the browser). */
   private gamesHtml(): string {
     const games = loadGames();
-    const rows = games.map(g => `<a class="game-link" href="${escapeHtml(g.url)}">
-        <span class="${sideCls(g.side)}">${sideName(g.side)}</span>
-        <span class="play-dim">${escapeHtml(new Date(g.at).toLocaleDateString())}</span></a>`).join("");
+    const rows = games.map(g => `<div class="game-item" data-game="${escapeHtml(g.room)}">
+        <a class="game-link" href="${escapeHtml(g.url)}">
+          <span class="game-line"><span class="game-side ${sideCls(g.side)}">${sideName(g.side)}</span>
+            <span class="game-state play-dim">${t("app:play.gameLoading")}</span></span>
+          <span class="game-date play-dim">${escapeHtml(new Date(g.at).toLocaleDateString())}</span>
+        </a>
+        <button class="btn btn-secondary game-drop" data-drop="${escapeHtml(g.room)}">${t("app:play.abandon")}</button>
+      </div>`).join("");
     return `<h2>${t("app:play.yourGames")}</h2>
       ${rows ? `<div class="game-list">${rows}</div>` : `<p class="play-dim">${t("app:play.noGames")}</p>`}
       <form class="paste-link" data-paste>
         <input name="link" type="url" placeholder="${escapeHtml(t("app:play.pastePlaceholder"))}" autocomplete="off">
         <button class="btn btn-secondary">${t("app:play.open")}</button>
       </form>`;
+  }
+
+  /** Each listed game's state, from the relay's steps played in this page's engine; games abandoned
+   *  by either player leave the list. Games waiting on you go first. */
+  private async fillGames() {
+    const list = this.main().querySelector(".game-list");
+    if (!list || !PLAY_ENDPOINT) return;
+    const games = loadGames();
+    const order: Array<{ room: string; rank: number }> = [];
+    for (const g of games) {
+      const item = list.querySelector<HTMLElement>(`[data-game="${CSS.escape(g.room)}"]`);
+      const label = item?.querySelector(".game-state");
+      const drop = item?.querySelector<HTMLButtonElement>(".game-drop");
+      if (!item || !label) continue;
+      try {
+        const seat = new URL(g.url).searchParams.get("seat") || "";
+        const snap = await fetchRoom(PLAY_ENDPOINT, g.room, seat);
+        if (snap.abandoned) {
+          forgetGame(g.room);
+          item.remove();
+          this.toast(t("app:play.wasAbandoned", { side: sideName(snap.abandoned.by) }));
+          continue;
+        }
+        const st = this.gameState(snap);
+        label.innerHTML = st.html;
+        label.classList.toggle("play-dim", !st.mine);
+        item.classList.toggle("game-mine", st.mine);
+        if (st.over && drop) drop.textContent = t("app:play.remove");
+        if (drop) drop.dataset.over = st.over ? "1" : "";
+        order.push({ room: g.room, rank: st.mine ? 0 : st.over ? 2 : 1 });
+      } catch {
+        label.textContent = t("app:play.gameUnreachable");
+        order.push({ room: g.room, rank: 3 });
+      }
+    }
+    order.sort((a, b) => a.rank - b.rank);
+    for (const o of order) {
+      const el = list.querySelector(`[data-game="${CSS.escape(o.room)}"]`);
+      if (el) list.appendChild(el);
+    }
+  }
+
+  /** A game's position, played from its seed: turn, round, VP, and whose move -- or how it ended. */
+  private gameState(snap: RoomSnapshot): { html: string; mine: boolean; over: boolean } {
+    const e = this.engine;
+    e.newGame(snap.seed);
+    for (const player of [1, -1]) e.seat(player, e.currentRules);
+    for (const [decision_type, primary_id, secondary_id, flags] of snap.steps) {
+      if (e.step({ decision_type, primary_id, secondary_id, flags }, 0)) break;
+    }
+    const s = e.display();
+    const vp = s.victory_points;
+    const vpText = vp === 0 ? `VP ${t("app:play.vpEven")}` : `<span class="${vp > 0 ? "us" : "ussr"}">VP ${Math.abs(vp)} ${sideName(vp > 0 ? "US" : "USSR")}</span>`;
+    if (s.is_terminal) {
+      const u = e.terminalUtility();
+      const winner = u > 0 ? "US" : u < 0 ? "USSR" : "";
+      return { html: winner ? t("app:play.gameWon", { side: `<span class="${sideCls(winner)}">${sideName(winner)}</span>`, turn: s.turn })
+        : t("app:play.gameDrawn"), mine: false, over: true };
+    }
+    const round = s.current_phase_name === "HEADLINE" ? t("app:play.headline") : s.current_phase_name === "SETUP" ? t("app:play.setup") : `AR${s.action_round}`;
+    const d = deciderOf(s);
+    const mine = d === snap.side;
+    const who = mine ? `<b>${t("app:online.yourMove")}</b>` : d ? t("app:online.theirMove", { side: sideName(d) }) : "";
+    return { html: `T${s.turn} ${round} · ${vpText} · ${who}`, mine, over: false };
+  }
+
+  private async dropGame(room: string, over: boolean) {
+    const g = loadGames().find(x => x.room === room);
+    if (!g) return;
+    if (!over) {
+      if (!window.confirm(t("app:play.confirmAbandon"))) return;
+      try {
+        await abandonRoom(PLAY_ENDPOINT, room, new URL(g.url).searchParams.get("seat") || "");
+      } catch (e) {
+        this.toast(t("app:play.abandonFailed", { error: e instanceof Error ? e.message : String(e) }));
+        return;
+      }
+    }
+    forgetGame(room);
+    this.main().querySelector(`[data-game="${CSS.escape(room)}"]`)?.remove();
   }
 
   private startOnline() {
@@ -278,7 +373,7 @@ class PlayApp {
   }
 
   private notifyState(): "on" | "ask" | "install" | "blocked" | "none" {
-    if (!this.online || !this.me) return "none";
+    if (!this.online || !this.me || this.online.abandoned) return "none";
     try {
       if (localStorage.getItem(this.notifyKey)) return "on";
     } catch { /* no storage */ }
@@ -347,7 +442,7 @@ class PlayApp {
   private canMove(): boolean {
     if (this.practice) return true;
     const g = this.online;
-    if (!g || g.seed === null || g.status === "desync" || !this.full) return false;
+    if (!g || g.seed === null || g.status === "desync" || g.abandoned || !this.full) return false;
     return deciderOf(this.full) === g.side;
   }
 
@@ -504,7 +599,8 @@ class PlayApp {
         parts.push(`<span class="presence presence-${p}" title="${escapeHtml(t(`app:play.presenceTitle.${p}`))}"></span>${word}`);
         if (Date.now() < this.activeUntil && p !== "offline") parts.push(`<span class="pulse">${t("app:play.active", { side: sideName(them) })}</span>`);
       }
-      if (this.full && g.side && g.seed !== null) {
+      if (g.abandoned) parts.push(`<b>${t("app:play.abandonedBy", { side: sideName(g.abandoned.by) })}</b>`);
+      else if (this.full && g.side && g.seed !== null) {
         if (this.full.is_terminal) parts.push(t("app:online.over"));
         else {
           const d = deciderOf(this.full);
@@ -644,21 +740,23 @@ class PlayApp {
     const changed = new Map((s.last_turn?.countries || []).map(x => [x.id, x]));
     const byId = countriesById(s);
     const groups = regionCountries(region).map(g => {
-      const rows = g.ids.map(id => {
+      const cards = g.ids.map(id => {
         const meta = COUNTRY.get(id)!;
         const n = byId.get(id);
         const us = n?.us_influence ?? 0, ussr = n?.ussr_influence ?? 0;
         const ctl = n?.controlled_by ?? "NONE";
         const legal = targets.has(id);
-        return `<div class="crow ${legal ? "crow-legal" : ""} ctl-${sideCls(ctl) || "none"}" data-country="${id}">
-          <span class="cname">${meta.battleground ? `<span class="bg">★</span>` : ""}${escapeHtml(countryName(id, meta.name))}
-            <span class="stab">${meta.stability}</span>${changed.has(id) ? ` <span class="tile-moved">●</span>` : ""}</span>
-          <span class="inf us ${ctl === "US" ? "ctl" : ""}">${us || ""}</span>
-          <span class="inf ussr ${ctl === "USSR" ? "ctl" : ""}">${ussr || ""}</span>
-          <span class="cact">${legal ? `<button class="btn btn-primary btn-act" data-target="${id}">${verb}</button>` : ""}</span>
-        </div>`;
+        const name = escapeHtml(countryName(id, SHORT_NAMES[meta.name] ?? meta.name));
+        // A target's whole card is the button: a big thing to tap.
+        const tag = legal ? "button" : "div";
+        return `<${tag} class="ccard ${legal ? "ccard-legal" : ""} ctl-${sideCls(ctl) || "none"} ${meta.battleground ? "ccard-bg" : ""}"${legal ? ` data-target="${id}"` : ""}>
+          <div class="ccard-head"><span class="ccard-name">${name}</span>${changed.has(id) ? `<span class="tile-moved">●</span>` : ""}${legal ? `<span class="ccard-act">${verb}</span>` : ""}</div>
+          <div class="ccard-row"><span class="stab">${meta.stability}</span>
+            <span class="inf us ${ctl === "US" ? "ctl" : ""}">${us || ""}</span><span class="inf ussr ${ctl === "USSR" ? "ctl" : ""}">${ussr || ""}</span></div>
+        </${tag}>`;
       }).join("");
-      return `${g.group ? `<div class="play-label">${escapeHtml(regionName(g.group))}${counts?.get(SE_ASIA.slot) ? ` ${this.countsHtml(counts.get(SE_ASIA.slot)!.us, counts.get(SE_ASIA.slot)!.ussr)}` : ""}</div>` : ""}${rows}`;
+      const sea = g.group && counts?.get(SE_ASIA.slot);
+      return `${g.group ? `<div class="play-label">${escapeHtml(regionName(g.group))}${sea ? ` ${this.countsHtml(sea.us, sea.ussr)}` : ""}</div>` : ""}<div class="ccards">${cards}</div>`;
     }).join("");
     return `<div class="region-head">
         <button class="btn btn-secondary" data-back>←</button>
@@ -667,7 +765,7 @@ class PlayApp {
         <span class="tile-net">${this.netHtml(slot)}</span>
       </div>
       <div class="tile-line">${this.standingHtml(slot)} · ${t("app:play.scoringCard")} ${this.whereHtml(slot)}</div>
-      <div class="crows">${groups}</div>`;
+      ${groups}`;
   }
 
   // ---- hand -----------------------------------------------------------------------------------

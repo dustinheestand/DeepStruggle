@@ -6,6 +6,7 @@
  *   GET  /rooms/<room>?seat=<secret>                   -> the game so far (RoomSnapshot)
  *   GET  /rooms/<room>/ws?seat=<secret>  (WebSocket)   -> the live game (online_protocol.ts)
  *   POST /rooms/<room>/push?seat=<secret> {subscription, url} -> tell this phone when it is the seat's move
+ *   POST /rooms/<room>/abandon?seat=<secret>           -> give the game up (both lists drop it)
  *   GET  /push-key                                     -> the VAPID public key to subscribe with
  *   GET  /health
  */
@@ -97,7 +98,7 @@ export default {
       return json(reply, 200, origin);
     }
 
-    const m = url.pathname.match(/^\/rooms\/([^/]+)(\/ws|\/push)?$/);
+    const m = url.pathname.match(/^\/rooms\/([^/]+)(\/ws|\/push|\/abandon)?$/);
     if (m && ROOM_RE.test(m[1])) {
       const stub = env.ROOMS.get(env.ROOMS.idFromName(m[1]));
       const seat = url.searchParams.get("seat");
@@ -115,6 +116,11 @@ export default {
           return json({ error: `not a push subscription for this room: ${why}` }, 400, origin);
         }
         const ok = await stub.subscribe(seat, { subscription: body.subscription, url: body.url });
+        return ok ? json({ ok: true }, 200, origin) : json({ error: "no such room or seat" }, 404, origin);
+      }
+      if (m[2] === "/abandon" && req.method === "POST") {
+        if (!origin) return json({ error: "origin not allowed" }, 403, null);
+        const ok = await stub.abandon(seat);
         return ok ? json({ ok: true }, 200, origin) : json({ error: "no such room or seat" }, 404, origin);
       }
       if (!m[2] && req.method === "GET") {
@@ -201,6 +207,18 @@ export class Room extends DurableObject<Env> {
     if (!d || !side) return false;
     addPushTarget(d, side, target);
     await this.save();
+    return true;
+  }
+
+  async abandon(secret: string | null): Promise<boolean> {
+    const d = await this.load();
+    const side = d ? seatOf(d, secret) : null;
+    if (!d || !side) return false;
+    if (!d.abandoned) {
+      d.abandoned = { by: side, at: new Date().toISOString() };
+      await this.save();
+      this.broadcast({ t: "abandoned", ...d.abandoned });
+    }
     return true;
   }
 
@@ -293,7 +311,7 @@ export class Room extends DurableObject<Env> {
   /** It is `next.side`'s move: tell its phones, unless it has the game in front of it. */
   private async notify(d: RoomData, next: NextToMove): Promise<void> {
     const env = this.env;
-    if (!env.VAPID_PUBLIC || !env.VAPID_PRIVATE_JWK) return;
+    if (!env.VAPID_PUBLIC || !env.VAPID_PRIVATE_JWK || d.abandoned) return;
     if (this.seen()[next.side] === "here") return;
     const targets = d.push?.[next.side] ?? [];
     console.log(`${next.side} to move: ${targets.length} phone(s) to tell`);

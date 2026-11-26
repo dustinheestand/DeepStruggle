@@ -11,8 +11,8 @@
  * The transport is a `Connect` so a test can link two pages without a network.
  */
 import {
-  ClientMessage, CreateRoomRequest, CreateRoomResponse, MAX_BATCH, NextToMove, Presence, PushKeyResponse, Seat,
-  ServerMessage, SubscribeRequest, WireStep, sameSteps,
+  Abandoned, ClientMessage, CreateRoomRequest, CreateRoomResponse, MAX_BATCH, NextToMove, Presence, PushKeyResponse,
+  RoomSnapshot, Seat, ServerMessage, SubscribeRequest, WireStep, sameSteps,
 } from "./online_protocol";
 
 export interface Link {
@@ -76,6 +76,8 @@ export class OnlineGame {
   online: Record<Seat, boolean> = { US: false, USSR: false };
   /** Each seat's presence: here (page in front of its player), away, offline. */
   seen: Record<Seat, Presence> = { US: "offline", USSR: "offline" };
+  /** Set once either player gave the game up: no more moves. */
+  abandoned: Abandoned | null = null;
   /** This page is in front of its player (the relay's presence, and whether to notify). */
   private visible = true;
   private lastActivity = 0;
@@ -209,6 +211,11 @@ export class OnlineGame {
       this.host.activity?.(m.by);
       return;
     }
+    if (m.t === "abandoned") {
+      this.abandoned = { by: m.by, at: m.at };
+      this.host.changed();
+      return;
+    }
     if (m.t === "error") {
       console.warn("play relay:", m.why);
       return;
@@ -218,6 +225,7 @@ export class OnlineGame {
       this.status = "online";
       this.error = "";
       this.setPresence(m.online, m.seen);
+      this.abandoned = m.abandoned ?? null;
       if (!this.visible) this.link?.send({ t: "visible", visible: false });
       if (this.seed !== m.seed || this.side !== m.side) {
         this.seed = m.seed;
@@ -352,4 +360,17 @@ export async function subscribeSeat(endpoint: string, room: string, seat: string
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${res.status}`);
+}
+
+/** A seat's game as the relay keeps it (seed, steps, abandoned), for a list of games. */
+export async function fetchRoom(endpoint: string, room: string, seat: string): Promise<RoomSnapshot> {
+  const res = await fetch(roomSnapshotUrl(endpoint, room, seat));
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as RoomSnapshot;
+}
+
+/** Give a game up: both players' lists drop it; the relay keeps its steps. */
+export async function abandonRoom(endpoint: string, room: string, seat: string): Promise<void> {
+  const res = await fetch(`${endpoint.replace(/\/+$/, "")}/rooms/${encodeURIComponent(room)}/abandon?seat=${encodeURIComponent(seat)}`, { method: "POST" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
