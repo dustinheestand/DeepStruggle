@@ -659,6 +659,11 @@ web/ui/
      "Abandoned by …", and its steps stay; a finished game's *Remove* only forgets it here.
    - **Region view**: the countries as a grid of cards (short names as on the map, `SHORT_NAMES`),
      the stability and both Influence boxes on each; a target's whole card is the button.
+   - **A country's details** (`showCountry`, the sheet): region, stability, Influence, what each side
+     needs to control it, the superpower beside it, and its neighbours as cards (a tap opens one's
+     own). Neighbours are kept off the board itself (the players know the map); a tap on a card that
+     is not a target opens this, and on a target a long press (500 ms, 10 px of drift) does, its
+     closing click swallowed so it neither closes the sheet nor plays the target.
 
 ---
 

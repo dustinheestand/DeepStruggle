@@ -25,6 +25,9 @@ concurrency:
 
 jobs:
   playdek:
+    # The fit reads the upstream project's stats database: a fork has none, so it skips the job (and
+    # its engine build); the page is then built without the Playdek scale, as without the secrets.
+    if: ${{ github.repository == 'mihaild/DeepStruggle' }}
     runs-on: ubuntu-24.04
     outputs:
       ready: ${{ steps.fit.outputs.ready }}

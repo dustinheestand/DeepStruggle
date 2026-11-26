@@ -727,6 +727,53 @@ class PlayApp {
     </div>`;
   }
 
+  /** A country as a card: name (battlegrounds purple), stability, both Influence boxes. A target's
+   *  whole card is its button (a long press opens its details); any other card opens its details. */
+  private countryCardHtml(id: number, o: { legal: boolean; verb: string; changed: boolean; byId: ReturnType<typeof countriesById> }): string {
+    const meta = COUNTRY.get(id)!;
+    const n = o.byId.get(id);
+    const us = n?.us_influence ?? 0, ussr = n?.ussr_influence ?? 0;
+    const ctl = n?.controlled_by ?? "NONE";
+    const name = escapeHtml(countryName(id, SHORT_NAMES[meta.name] ?? meta.name));
+    const tag = o.legal ? "button" : "div";
+    return `<${tag} class="ccard ${o.legal ? "ccard-legal" : ""} ctl-${sideCls(ctl) || "none"} ${meta.battleground ? "ccard-bg" : ""}" data-info="${id}"${o.legal ? ` data-target="${id}"` : ""}>
+      <div class="ccard-head"><span class="ccard-name">${name}</span>${o.changed ? `<span class="tile-moved">●</span>` : ""}${o.legal ? `<span class="ccard-act">${o.verb}</span>` : ""}</div>
+      <div class="ccard-row"><span class="stab">${meta.stability}</span>
+        <span class="inf us ${ctl === "US" ? "ctl" : ""}">${us || ""}</span><span class="inf ussr ${ctl === "USSR" ? "ctl" : ""}">${ussr || ""}</span></div>
+    </${tag}>`;
+  }
+
+  /**
+   * A country's details, in the sheet: where it is, its Influence and what each side needs to control
+   * it (control: at least the other side's Influence plus the stability), the superpower beside it, and
+   * its neighbours as cards -- a tap on one opens its own.
+   */
+  private showCountry(id: number) {
+    const s = this.shown;
+    const meta = COUNTRY.get(id);
+    if (!s || !meta) return;
+    const byId = countriesById(s);
+    const n = byId.get(id);
+    const us = n?.us_influence ?? 0, ussr = n?.ussr_influence ?? 0;
+    const need = (mine: number, theirs: number) => Math.max(0, theirs + meta.stability - mine);
+    const ctl = n?.controlled_by ?? "NONE";
+    const where = [regionName(meta.region), ...(meta.subregions || []).map(r => regionName(r))].join(" · ");
+    const ids = new Map(MAP_METADATA.countries.map(c => [c.name, c.id]));
+    const neighbours = meta.neighbours.map(nm => ids.get(nm)).filter((x): x is number => x !== undefined);
+    const changed = new Set((s.last_turn?.countries || []).map(c => c.id));
+    const superpower = meta.superpower_adjacent === "USA" ? "US" : meta.superpower_adjacent === "USSR" ? "USSR" : "";
+    this.sheet(`<div class="country-sheet">
+      <h2>${meta.battleground ? `<span class="bg">★</span> ` : ""}${escapeHtml(countryName(id, meta.name))}</h2>
+      <p class="play-dim">${escapeHtml(where)} · ${t("app:play.stability", { n: meta.stability })}${meta.battleground ? ` · ${t("app:play.battleground")}` : ""}</p>
+      <div class="country-inf"><span class="inf us ${ctl === "US" ? "ctl" : ""}">${us}</span><span class="inf ussr ${ctl === "USSR" ? "ctl" : ""}">${ussr}</span>
+        <span>${ctl === "NONE" ? t("app:play.uncontrolled") : t("app:play.controlledBy", { side: `<span class="${sideCls(ctl)}">${sideName(ctl)}</span>` })}</span></div>
+      <p>${t("app:play.toControl")} <span class="us">${sideName("US")} +${need(us, ussr)}</span> · <span class="ussr">${sideName("USSR")} +${need(ussr, us)}</span></p>
+      ${superpower ? `<p>${t("app:play.besideSuperpower", { side: `<span class="${sideCls(superpower)}">${sideName(superpower)}</span>` })}</p>` : ""}
+      <div class="play-label">${t("app:play.neighbours", { n: neighbours.length })}</div>
+      <div class="ccards">${neighbours.map(nid => this.countryCardHtml(nid, { legal: false, verb: "", changed: changed.has(nid), byId })).join("")}</div>
+    </div>`);
+  }
+
   private regionHtml(region: string): string {
     const s = this.shown!;
     const slot = REGIONS.find(r => r.name === region)?.slot ?? 0;
@@ -740,21 +787,7 @@ class PlayApp {
     const changed = new Map((s.last_turn?.countries || []).map(x => [x.id, x]));
     const byId = countriesById(s);
     const groups = regionCountries(region).map(g => {
-      const cards = g.ids.map(id => {
-        const meta = COUNTRY.get(id)!;
-        const n = byId.get(id);
-        const us = n?.us_influence ?? 0, ussr = n?.ussr_influence ?? 0;
-        const ctl = n?.controlled_by ?? "NONE";
-        const legal = targets.has(id);
-        const name = escapeHtml(countryName(id, SHORT_NAMES[meta.name] ?? meta.name));
-        // A target's whole card is the button: a big thing to tap.
-        const tag = legal ? "button" : "div";
-        return `<${tag} class="ccard ${legal ? "ccard-legal" : ""} ctl-${sideCls(ctl) || "none"} ${meta.battleground ? "ccard-bg" : ""}"${legal ? ` data-target="${id}"` : ""}>
-          <div class="ccard-head"><span class="ccard-name">${name}</span>${changed.has(id) ? `<span class="tile-moved">●</span>` : ""}${legal ? `<span class="ccard-act">${verb}</span>` : ""}</div>
-          <div class="ccard-row"><span class="stab">${meta.stability}</span>
-            <span class="inf us ${ctl === "US" ? "ctl" : ""}">${us || ""}</span><span class="inf ussr ${ctl === "USSR" ? "ctl" : ""}">${ussr || ""}</span></div>
-        </${tag}>`;
-      }).join("");
+      const cards = g.ids.map(id => this.countryCardHtml(id, { legal: targets.has(id), verb, changed: changed.has(id), byId })).join("");
       const sea = g.group && counts?.get(SE_ASIA.slot);
       return `${g.group ? `<div class="play-label">${escapeHtml(regionName(g.group))}${sea ? ` ${this.countsHtml(sea.us, sea.ussr)}` : ""}</div>` : ""}<div class="ccards">${cards}</div>`;
     }).join("");
@@ -950,8 +983,43 @@ class PlayApp {
     });
   }
 
+  /** A long press opened a target's details: the click that ends it does not also play it. */
+  private pressed = false;
+
   private bindChrome() {
     this.bindPullToRefresh();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let at = { x: 0, y: 0 };
+    const cancel = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    };
+    document.addEventListener("pointerdown", e => {
+      this.pressed = false;
+      const card = (e.target as HTMLElement).closest<HTMLElement>("[data-target][data-info]");
+      if (!card) return;
+      at = { x: e.clientX, y: e.clientY };
+      timer = setTimeout(() => {
+        timer = null;
+        this.pressed = true;
+        this.showCountry(Number(card.dataset.info));
+      }, 500);
+    });
+    document.addEventListener("pointermove", e => {
+      if (timer && Math.hypot(e.clientX - at.x, e.clientY - at.y) > 10) cancel();
+    });
+    document.addEventListener("pointerup", cancel);
+    // The click that ends a long press would land on the sheet it opened (closing it) or play the
+    // target: it is swallowed before anything sees it.
+    document.addEventListener("click", e => {
+      if (!this.pressed) return;
+      this.pressed = false;
+      e.stopPropagation();
+      e.preventDefault();
+    }, true);
+    document.addEventListener("pointercancel", cancel);
+    // The long press is ours, not the phone's text-selection or context menu.
+    document.addEventListener("contextmenu", e => { if ((e.target as HTMLElement).closest(".ccard")) e.preventDefault(); });
     document.querySelectorAll<HTMLButtonElement>("button.play-tab").forEach(b => b.addEventListener("click", () => {
       this.tab = b.dataset.tab as Tab;
       if (this.tab !== "board") this.region = null;
@@ -967,6 +1035,11 @@ class PlayApp {
     // Everything drawn from state is redrawn often: one listener on the document.
     document.addEventListener("click", e => {
       const el = e.target as HTMLElement;
+      const info = el.closest<HTMLElement>("[data-info]");
+      if (info && (!info.dataset.target || info.closest("#play-sheet"))) {
+        this.showCountry(Number(info.dataset.info));
+        return;
+      }
       const target = el.closest<HTMLElement>("[data-target]");
       if (target) {
         e.stopPropagation();

@@ -485,3 +485,10 @@ body.play-starting .play-decision { display: none; }
 .game-date { font-size: 11px; }
 .game-mine .game-link { border-color: var(--accent); }
 .game-drop { min-height: 32px; font-size: 12px; padding: 4px 10px; }
+
+/* A country's details (main.ts showCountry). */
+.country-sheet h2 { margin: 0 0 2px; padding-right: 30px; }
+.country-sheet .bg { color: #c084fc; }
+.country-inf { display: grid; grid-template-columns: 44px 44px 1fr; gap: 6px; align-items: center; margin: 10px 0 4px; }
+.ccard { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+div.ccard[data-info] { cursor: pointer; }
