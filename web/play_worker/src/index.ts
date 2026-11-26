@@ -17,7 +17,7 @@ import {
   RoomData, addPushTarget, applyMove, onlineOf, parseClientMessage, presenceOf, removePushTarget, seatOf, snapshot,
   syncMessage,
 } from "./room";
-import { isSubscription, sendPush } from "./push";
+import { isPushEndpoint, isSubscription, sendPush } from "./push";
 
 export interface Env {
   ROOMS: DurableObjectNamespace<Room>;
@@ -108,8 +108,11 @@ export default {
       if (m[2] === "/push" && req.method === "POST") {
         if (!origin) return json({ error: "origin not allowed" }, 403, null);
         const body = await req.json().catch(() => null) as SubscribeRequest | null;
-        if (!body || !isSubscription(body.subscription) || !seatPageOk(body.url, m[1], env)) {
-          return json({ error: "not a push subscription for this room" }, 400, origin);
+        const why = body ? subscriptionProblem(body.subscription) ?? seatPageProblem(body.url, m[1], env) : "no JSON body";
+        if (why || !body) {
+          const host = (() => { try { return new URL(String(body?.subscription?.endpoint)).host; } catch { return "?"; } })();
+          console.log(`subscribe refused: ${why} (endpoint host ${host})`);
+          return json({ error: `not a push subscription for this room: ${why}` }, 400, origin);
         }
         const ok = await stub.subscribe(seat, { subscription: body.subscription, url: body.url });
         return ok ? json({ ok: true }, 200, origin) : json({ error: "no such room or seat" }, 404, origin);
@@ -123,17 +126,36 @@ export default {
   },
 };
 
-/** A seat's page, to open from a notification: on the page's own origin, naming this room. */
-function seatPageOk(raw: unknown, room: string, env: Env): boolean {
-  if (typeof raw !== "string" || raw.length > 600) return false;
+/** Why a seat's page cannot be opened from a notification (it must be on the page's own origin and
+ *  name this room), or null. */
+function seatPageProblem(raw: unknown, room: string, env: Env): string | null {
+  if (typeof raw !== "string" || raw.length > 600) return "the page address is missing or too long";
   let u: URL;
   try {
     u = new URL(raw);
   } catch {
-    return false;
+    return "the page address is not a URL";
   }
   const list = origins(env);
-  return (list.includes("*") || list.includes(u.origin)) && u.searchParams.get("room") === room;
+  if (!list.includes("*") && !list.includes(u.origin)) return `the page is not on an allowed origin (${u.origin})`;
+  if (u.searchParams.get("room") !== room) return "the page address names another room";
+  return null;
+}
+
+/** Why `v` is not a push subscription the relay may send to, or null. */
+function subscriptionProblem(v: unknown): string | null {
+  if (isSubscription(v)) return null;
+  const s = v as { endpoint?: unknown; keys?: { p256dh?: unknown; auth?: unknown } } | null;
+  if (!s || typeof s.endpoint !== "string") return "no endpoint";
+  if (!isPushEndpoint(s.endpoint)) {
+    try {
+      return `the endpoint is not a known push service (${new URL(s.endpoint).host})`;
+    } catch {
+      return "the endpoint is not a URL";
+    }
+  }
+  if (typeof s.keys?.p256dh !== "string" || typeof s.keys?.auth !== "string") return "the subscription has no keys";
+  return "the subscription is malformed";
 }
 
 interface Attachment {

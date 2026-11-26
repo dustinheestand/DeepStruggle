@@ -817,7 +817,43 @@ class PlayApp {
 
   // ---- chrome ---------------------------------------------------------------------------------
 
+  /**
+   * Pull down at the top of the middle to reload: the page scrolls only its middle (the tracks and
+   * the decision stay put), so the browser's own pull-to-refresh has nothing to pull, and a Home
+   * Screen app has none at all.
+   */
+  private bindPullToRefresh() {
+    const main = this.main();
+    const hint = document.createElement("div");
+    hint.className = "pull-hint";
+    main.before(hint);
+    let start: number | null = null;
+    let pulled = 0;
+    const PULL = 80;
+    main.addEventListener("touchstart", e => {
+      start = main.scrollTop <= 0 && e.touches.length === 1 ? e.touches[0].clientY : null;
+      pulled = 0;
+    }, { passive: true });
+    main.addEventListener("touchmove", e => {
+      if (start === null) return;
+      pulled = Math.max(0, e.touches[0].clientY - start);
+      hint.style.height = `${Math.min(pulled, PULL + 20) / 2}px`;
+      hint.textContent = pulled > PULL ? t("app:play.pullRelease") : pulled > 20 ? t("app:play.pullDown") : "";
+    }, { passive: true });
+    main.addEventListener("touchend", () => {
+      if (start !== null && pulled > PULL) {
+        hint.textContent = t("app:play.pullReloading");
+        location.reload();
+        return;
+      }
+      start = null;
+      hint.style.height = "0";
+      hint.textContent = "";
+    });
+  }
+
   private bindChrome() {
+    this.bindPullToRefresh();
     document.querySelectorAll<HTMLButtonElement>(".play-tab").forEach(b => b.addEventListener("click", () => {
       this.tab = b.dataset.tab as Tab;
       if (this.tab !== "board") this.region = null;

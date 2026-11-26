@@ -158,6 +158,9 @@
     "open": "Open",
     "badLink": "That is not a game link.",
     "loadingEngine": "Loading the engine…",
+    "pullDown": "↓ Pull to reload",
+    "pullRelease": "↑ Release to reload",
+    "pullReloading": "Reloading…",
     "connecting": "Connecting to the game…",
     "workbench": "The full workbench (map, models, analysis)"
   }
