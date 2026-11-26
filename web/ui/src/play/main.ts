@@ -34,10 +34,11 @@ import { CARDS_METADATA, MAP_METADATA } from "../metadata";
 import { escapeHtml } from "../html";
 import { lineHtml, messageHtml } from "../game/log";
 import { effectNameMessage } from "../cards_view";
+import { spaceRaceBoxes } from "../tracks_view";
 import { cardDescription, cardName, countryName, initLanguage, regionName, sideName, t } from "../i18n";
 import {
   Count, HistoryEntry, countriesById, REGIONS, SCORING_CARDS, SE_ASIA, Upshot, cardWhere, countText, history, regionCountries,
-  regionCounts, revealed,
+  regionCounts, revealed, spaceAbilities,
 } from "./summary";
 
 type Tab = "board" | "hand" | "history";
@@ -422,9 +423,35 @@ class PlayApp {
     const effects = (this.shown.flags || []).map(f => effectNameMessage(f)).filter(m => m !== null)
       .map(m => `<span class="chip">${messageHtml(m!)}</span>`).join("");
     return `${this.whatHappenedHtml()}
+      ${this.spaceHtml()}
       <div class="tiles">${tiles}</div>
       ${effects ? `<div class="effects"><div class="play-label">${t("app:play.effects")}</div>${effects}</div>` : ""}
       <p class="play-legend play-dim">${t("app:play.legend")}</p>`;
+  }
+
+  /**
+   * The Space Race in one block: both sides' boxes, then the privileges in force -- only ever one
+   * side's (holding one means being ahead at its box, so the other side is behind every box it
+   * could hold), in that side's colour -- and each side's next attempt.
+   */
+  private spaceHtml(): string {
+    const s = this.shown!;
+    const boxes = spaceRaceBoxes();
+    if (!boxes.length) return "";
+    const held = spaceAbilities(s.space, boxes);
+    const pos = (side: Seat) =>
+      `<span class="${sideCls(side)}">${sideName(side)} <b>${s.space[side]}</b></span> <span class="play-dim">${escapeHtml(boxes[s.space[side]]?.name ?? "")}</span>`;
+    const next = (side: Seat) => {
+      const n = boxes[s.space[side] + 1];
+      const tried = s.space_turns_used?.[side] ?? 0;
+      return `<span class="${sideCls(side)}">${sideName(side)}</span> ${n ? t("tracks:next.text", { ops: n.minOps, roll: n.maxRoll }) : t("tracks:next.done")}${tried ? ` (${t("app:play.spaceTried", { n: tried })})` : ""}`;
+    };
+    const holder = held[0]?.side;
+    return `<div class="space ${holder ? `space-${sideCls(holder)}` : ""}">
+      <div class="space-head"><span class="play-label">${t("app:play.spaceRace")}</span> ${pos("US")} · ${pos("USSR")}</div>
+      ${held.map(h => `<span class="space-ability ${sideCls(h.side)}" title="${escapeHtml(h.box.ability)}">${escapeHtml(h.box.abilityShort)}</span>`).join("")}
+      <div class="space-next play-dim">${next("US")} · ${next("USSR")}</div>
+    </div>`;
   }
 
   private regionHtml(region: string): string {

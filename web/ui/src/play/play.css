@@ -357,3 +357,29 @@ body.play-starting .play-decision { display: none; }
 .tiles { align-items: stretch; }
 .tile { display: flex; flex-direction: column; justify-content: flex-start; gap: 1px; }
 .tile-sea { font-size: 11px; }
+
+/* Space Race on the board: both boxes, the privileges in force (one side's), the next attempts. */
+.space {
+  background: var(--panel);
+  border: 1px solid var(--border-color);
+  border-left: 4px solid var(--border-color);
+  border-radius: 10px;
+  padding: 6px 10px 8px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.space.space-us { border-left-color: var(--us); }
+.space.space-ussr { border-left-color: var(--ussr); }
+.space-head .play-label { margin: 0 6px 0 0; }
+.space-head b { font-size: 15px; }
+.space-ability {
+  display: inline-block;
+  font-weight: 700;
+  font-size: 13px;
+  margin: 5px 6px 0 0;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+.space-ability.us { background: rgba(91, 155, 255, 0.15); }
+.space-ability.ussr { background: rgba(255, 92, 92, 0.15); }
+.space-next { font-size: 12px; margin-top: 4px; }

@@ -130,6 +130,8 @@
     "more": "{{n}} more in History",
     "download": "Download game",
     "undo": "Undo",
-    "send": "Send move ✓"
+    "send": "Send move ✓",
+    "spaceRace": "Space Race",
+    "spaceTried": "tried {{n}} this turn"
   }
 }

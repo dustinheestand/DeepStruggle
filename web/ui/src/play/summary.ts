@@ -15,6 +15,7 @@ import { WasmEngine } from "../engine/wasm_engine";
 import { ReplayStep } from "../replay_controls";
 import { LogEntry, groupLog } from "../game/log_view";
 import { CARDS_METADATA, MAP_METADATA } from "../metadata";
+import { SpaceBoxMetadata } from "../tracks_view";
 
 export type Side = "US" | "USSR";
 
@@ -173,4 +174,22 @@ export function regionCountries(region: string): Array<{ group: string; ids: num
 export function revealed(beforeLocations: Record<string, string> | undefined, afterLocations: Record<string, string> | undefined): boolean {
   const a = beforeLocations || {}, b = afterLocations || {};
   return Object.entries(a).some(([id, loc]) => loc === "UNSEEN" && b[id] !== undefined && b[id] !== "UNSEEN");
+}
+
+/** A Space Race privilege in force: its box was reached by `side` and not yet by the other side. */
+export interface SpaceAbility {
+  side: Side;
+  box: SpaceBoxMetadata;
+}
+
+/** The privileges in force, by the track (tracks_view.ts spaceRaceBoxes: the engine's boxes, their
+ *  privileges' words) -- the rule the workbench's Space Race panel shows. */
+export function spaceAbilities(space: { US: number; USSR: number }, boxes: SpaceBoxMetadata[]): SpaceAbility[] {
+  const out: SpaceAbility[] = [];
+  for (const box of boxes) {
+    if (!box.privilege) continue;
+    if (space.US >= box.box && space.USSR < box.box) out.push({ side: "US", box });
+    if (space.USSR >= box.box && space.US < box.box) out.push({ side: "USSR", box });
+  }
+  return out;
 }
