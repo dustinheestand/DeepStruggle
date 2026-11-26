@@ -615,7 +615,10 @@ web/ui/
    - The workbench's invite link opens the friend's seat on the phone page (`play.html`); both
      pages serve the same rooms.
 13. **The phone page (`play.html`, `src/play/`)**: the game against a friend (or both sides on
-    one device, *Practice*) in summaries instead of the map.
+    one device, *Practice*) in summaries instead of the map. A phone opening the workbench
+    (`index.html`, coarse pointer and at most 820 px wide) is sent here with its query (a room link
+    included); `?workbench`, `?replay` and automated browsers (`navigator.webdriver`, the workbench's
+    own mobile tests) stay on the workbench, and the start screen links back to it.
    - **Top strip**: turn and round, DEFCON, VP, Mil Ops, Space Race, China Card; the connection
      and whose move it is (the tab title too; a vibration on Android when it becomes yours).
    - **Board**: a tile per region -- each side's `battlegrounds-countries` controlled, as the

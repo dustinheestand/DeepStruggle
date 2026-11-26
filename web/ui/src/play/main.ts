@@ -151,6 +151,7 @@ class PlayApp {
       <h2>${t("app:play.practiceTitle")}</h2>
       <p class="play-dim">${t("app:play.practiceText")}</p>
       <button class="btn btn-secondary btn-big" data-start="practice">${t("app:play.practice")}</button>
+      <p class="play-legend"><a class="play-dim" href="./?workbench">${t("app:play.workbench")}</a></p>
     </div>`;
     this.main().querySelector<HTMLFormElement>("[data-paste]")?.addEventListener("submit", e => {
       e.preventDefault();
