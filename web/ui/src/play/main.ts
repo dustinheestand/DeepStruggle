@@ -118,6 +118,8 @@ class PlayApp {
         .catch(e => console.warn("service worker:", e));
     }
     this.bindChrome();
+    // Until the game is on the board, say what it waits for: the engine (a few MB), then the relay.
+    this.main().innerHTML = `<p class="play-wait">${t("app:play.loadingEngine")}</p>`;
     try {
       this.engine = await WasmEngine.load();
     } catch (e) {
@@ -240,6 +242,7 @@ class PlayApp {
       },
     });
     this.renderStatus();
+    this.main().innerHTML = `<p class="play-wait">${t("app:play.connecting")}</p>`;
     this.online.start();
     const wake = () => {
       const visible = document.visibilityState === "visible";

@@ -425,3 +425,4 @@ body.play-starting .play-decision { display: none; }
 }
 /* A target's Influence in the decision's list: US / USSR, in their colours. */
 .hud-inf { font-size: 15px; font-weight: 700; opacity: 1; font-variant-numeric: tabular-nums; }
+.play-wait { color: var(--text-dim); text-align: center; margin-top: 30vh; animation: pulse 1.6s ease-in-out infinite; }

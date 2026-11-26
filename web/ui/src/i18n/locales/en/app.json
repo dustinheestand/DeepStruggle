@@ -157,6 +157,8 @@
     "pastePlaceholder": "Paste a game link",
     "open": "Open",
     "badLink": "That is not a game link.",
+    "loadingEngine": "Loading the engine…",
+    "connecting": "Connecting to the game…",
     "workbench": "The full workbench (map, models, analysis)"
   }
 }
