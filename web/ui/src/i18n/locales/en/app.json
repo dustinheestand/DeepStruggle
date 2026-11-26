@@ -132,6 +132,25 @@
     "undo": "Undo",
     "send": "Send move ✓",
     "spaceRace": "Space Race",
-    "spaceTried": "tried {{n}} this turn"
+    "spaceTried": "tried {{n}} this turn",
+    "opponentOffline": "{{side}} offline",
+    "presenceTitle": {
+      "here": "Has the game open in front of them",
+      "away": "Has the game open, but in the background or the phone is locked",
+      "offline": "Not connected"
+    },
+    "active": "{{side}} is active…",
+    "notify": "🔔 Notify me",
+    "notifyTitle": "Notifications",
+    "notifyInstall": "On an iPhone, notifications need the game on your Home Screen: tap Share, then Add to Home Screen, open the game from there, and tap 🔔 again.",
+    "notifyOn": "You will be notified when it is your move.",
+    "notifyDenied": "notifications are not allowed for this site",
+    "notifyNoRelay": "the relay sends no notifications",
+    "notifyFailed": "Notifications could not be turned on: {{error}}",
+    "yourGames": "Your games",
+    "noGames": "No games on this device yet.",
+    "pastePlaceholder": "Paste a game link",
+    "open": "Open",
+    "badLink": "That is not a game link."
   }
 }

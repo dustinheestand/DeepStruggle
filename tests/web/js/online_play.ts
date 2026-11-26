@@ -12,7 +12,7 @@ import { GameSession } from "../../../web/ui/src/game/session";
 import { Connect, LinkHandlers, OnlineGame, reconcile } from "../../../web/ui/src/game/online";
 import { Seat, ServerMessage, WireStep, sameSteps } from "../../../web/ui/src/game/online_protocol";
 import { applyWireSteps, sessionSteps, startOnlineGame } from "../../../web/ui/src/game/online_session";
-import { RoomData, applyMove, parseClientMessage, seatOf, syncMessage } from "../../../web/play_worker/src/room";
+import { RoomData, applyMove, onlineOf, parseClientMessage, presenceOf, seatOf, syncMessage } from "../../../web/play_worker/src/room";
 
 const base = pathToFileURL(process.argv[2]).href;
 
@@ -26,10 +26,12 @@ class MemoryRelay {
     this.data = { room: "r".repeat(16), seed, engine, created: "now", seats: { US: "us-secret", USSR: "ussr-secret" }, steps: [] };
   }
 
+  private seen() {
+    return presenceOf(this.sockets.filter(s => s.open).map(s => ({ side: s.side, visible: true })));
+  }
+
   private online(): Record<Seat, boolean> {
-    const on = { US: false, USSR: false };
-    for (const s of this.sockets) if (s.open) on[s.side] = true;
-    return on;
+    return onlineOf(this.seen());
   }
 
   private deliver(to: { h: LinkHandlers; open: boolean }, m: ServerMessage): void {
@@ -46,7 +48,7 @@ class MemoryRelay {
       this.queue.push(() => {
         if (!sock.open) return;
         h.open();
-        this.deliver(sock, syncMessage(this.data, side, this.online()));
+        this.deliver(sock, syncMessage(this.data, side, this.seen()));
         for (const o of this.sockets) if (o !== sock && o.open) this.deliver(o, { t: "presence", online: this.online() });
       });
       return {
@@ -56,8 +58,9 @@ class MemoryRelay {
             if (!sock.open) return;
             const msg = parseClientMessage(raw);
             if (!msg) throw new Error(`the relay refused ${raw}`);
+            if (msg.t !== "move") return;
             const r = applyMove(this.data, msg, side);
-            if (r.kind === "stale") this.deliver(sock, syncMessage(this.data, side, this.online()));
+            if (r.kind === "stale") this.deliver(sock, syncMessage(this.data, side, this.seen()));
             else if (r.kind === "bad") throw new Error(r.why);
             else for (const o of this.sockets) if (o.open) this.deliver(o, r.message);
           });

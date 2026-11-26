@@ -8,7 +8,8 @@
  * room is at, so the list cannot fork.
  */
 import {
-  ClientMessage, MAX_BATCH, MAX_STEPS, RoomSnapshot, SEAT_NAMES, Seat, ServerMessage, WireStep, isWireStep,
+  ClientMessage, MAX_BATCH, MAX_NOTE, MAX_STEPS, NextToMove, Presence, PushSubscriptionJSON, RoomSnapshot, SEAT_NAMES, Seat,
+  ServerMessage, WireStep, isSeat, isWireStep,
 } from "../../ui/src/game/online_protocol";
 
 export interface RoomData {
@@ -19,6 +20,27 @@ export interface RoomData {
   created: string;
   seats: Record<Seat, string>;
   steps: WireStep[];
+  /** Each seat's phones to tell when it is that seat's move, with the seat's page to open. */
+  push?: Partial<Record<Seat, PushTarget[]>>;
+}
+
+export interface PushTarget {
+  subscription: PushSubscriptionJSON;
+  url: string;
+}
+
+/** Most phones one seat keeps subscribed. */
+export const MAX_PUSH_PER_SEAT = 4;
+
+/** Add (or refresh) a seat's subscription, newest first. */
+export function addPushTarget(d: RoomData, side: Seat, t: PushTarget): void {
+  const list = (d.push ??= {})[side] ?? [];
+  d.push[side] = [t, ...list.filter(x => x.subscription.endpoint !== t.subscription.endpoint)].slice(0, MAX_PUSH_PER_SEAT);
+}
+
+export function removePushTarget(d: RoomData, side: Seat, endpoint: string): void {
+  const list = d.push?.[side];
+  if (list) d.push![side] = list.filter(x => x.subscription.endpoint !== endpoint);
 }
 
 export type MoveResult =
@@ -34,8 +56,23 @@ export function seatOf(d: RoomData, secret: string | null): Seat | null {
   return null;
 }
 
-export function syncMessage(d: RoomData, side: Seat, online: Record<Seat, boolean>): ServerMessage {
-  return { t: "sync", seed: d.seed, engine: d.engine, side, steps: d.steps, online };
+export function syncMessage(d: RoomData, side: Seat, seen: Record<Seat, Presence>): ServerMessage {
+  return { t: "sync", seed: d.seed, engine: d.engine, side, steps: d.steps, online: onlineOf(seen), seen };
+}
+
+/** Connected at all, from the presences (what pages before `seen` read). */
+export function onlineOf(seen: Record<Seat, Presence>): Record<Seat, boolean> {
+  return { US: seen.US !== "offline", USSR: seen.USSR !== "offline" };
+}
+
+/** A seat's presence from its sockets: here if any is in front of its player, away if any is open. */
+export function presenceOf(sockets: Array<{ side: Seat; visible: boolean }>): Record<Seat, Presence> {
+  const seen: Record<Seat, Presence> = { US: "offline", USSR: "offline" };
+  for (const s of sockets) {
+    if (s.visible) seen[s.side] = "here";
+    else if (seen[s.side] === "offline") seen[s.side] = "away";
+  }
+  return seen;
 }
 
 export function snapshot(d: RoomData, side: Seat): RoomSnapshot {
@@ -52,13 +89,21 @@ export function parseClientMessage(raw: string): ClientMessage | null {
   }
   if (typeof v !== "object" || v === null) return null;
   const m = v as Record<string, unknown>;
+  if (m.t === "visible") return typeof m.visible === "boolean" ? { t: "visible", visible: m.visible } : null;
+  if (m.t === "activity") return { t: "activity" };
   if (m.t !== "move" || !Number.isInteger(m.at) || !Array.isArray(m.steps)) return null;
   if (m.steps.length === 0 || m.steps.length > MAX_BATCH || !m.steps.every(isWireStep)) return null;
-  return { t: "move", at: m.at as number, steps: m.steps as WireStep[] };
+  const msg: ClientMessage = { t: "move", at: m.at as number, steps: m.steps as WireStep[] };
+  const n = m.next as NextToMove | undefined;
+  if (n !== undefined) {
+    if (typeof n !== "object" || n === null || !isSeat(n.side) || typeof n.note !== "string") return null;
+    msg.next = { side: n.side, note: n.note.slice(0, MAX_NOTE) };
+  }
+  return msg;
 }
 
 /** Append `msg`'s steps if they start where the room is; changes `d` only when they do. */
-export function applyMove(d: RoomData, msg: ClientMessage, by: Seat): MoveResult {
+export function applyMove(d: RoomData, msg: Extract<ClientMessage, { t: "move" }>, by: Seat): MoveResult {
   if (msg.at !== d.steps.length) return { kind: "stale" };
   if (d.steps.length + msg.steps.length > MAX_STEPS) return { kind: "bad", why: "the game is too long" };
   d.steps.push(...msg.steps.map(s => [...s] as WireStep));

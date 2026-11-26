@@ -11,7 +11,8 @@
  * The transport is a `Connect` so a test can link two pages without a network.
  */
 import {
-  ClientMessage, CreateRoomRequest, CreateRoomResponse, MAX_BATCH, Seat, ServerMessage, WireStep, sameSteps,
+  ClientMessage, CreateRoomRequest, CreateRoomResponse, MAX_BATCH, NextToMove, Presence, PushKeyResponse, Seat,
+  ServerMessage, SubscribeRequest, WireStep, sameSteps,
 } from "./online_protocol";
 
 export interface Link {
@@ -40,6 +41,11 @@ export interface OnlineHost {
   /** How many of `steps()` may be sent: the rest are the player's still to confirm (play.html keeps a
    *  move it can take back until it is sent). All of them when absent. */
   pushable?(): number;
+  /** Who moves once the steps being sent are in, and the move in a few words: the relay tells that
+   *  player's phone. Asked once per send; null or absent, nobody is told. */
+  next?(): NextToMove | null;
+  /** The other player tapped something (play.html pulses). */
+  activity?(by: Seat): void;
 }
 
 export type OnlineStatus = "connecting" | "online" | "offline" | "desync";
@@ -68,6 +74,11 @@ export class OnlineGame {
   seed: number | null = null;
   engine = "";
   online: Record<Seat, boolean> = { US: false, USSR: false };
+  /** Each seat's presence: here (page in front of its player), away, offline. */
+  seen: Record<Seat, Presence> = { US: "offline", USSR: "offline" };
+  /** This page is in front of its player (the relay's presence, and whether to notify). */
+  private visible = true;
+  private lastActivity = 0;
   /** Why the game stopped agreeing with the relay, when it did. */
   error = "";
   private link: Link | null = null;
@@ -112,11 +123,34 @@ export class OnlineGame {
     if (!this.connected || !this.link || this.status === "desync") return;
     const local = this.host.steps();
     const limit = Math.min(local.length, this.host.pushable?.() ?? local.length);
+    if (this.sent >= limit) return;
+    // Who moves next is the position after every step being sent: told with the last batch.
+    const next = limit === local.length ? this.host.next?.() ?? null : null;
     while (this.sent < limit) {
       const batch = local.slice(this.sent, Math.min(limit, this.sent + MAX_BATCH));
-      this.link.send({ t: "move", at: this.sent, steps: batch });
+      const last = this.sent + batch.length >= limit;
+      this.link.send({ t: "move", at: this.sent, steps: batch, ...(last && next ? { next } : {}) });
       this.sent += batch.length;
     }
+  }
+
+  /** The page came in front of its player, or went behind something. */
+  setVisible(v: boolean): void {
+    this.visible = v;
+    if (this.connected) this.link?.send({ t: "visible", visible: v });
+  }
+
+  /** The player tapped something: the other page is told, at most every two seconds. */
+  activity(): void {
+    const now = Date.now();
+    if (!this.connected || now - this.lastActivity < 2000) return;
+    this.lastActivity = now;
+    this.link?.send({ t: "activity" });
+  }
+
+  private setPresence(online: Record<Seat, boolean>, seen?: Record<Seat, Presence>): void {
+    this.online = online;
+    this.seen = seen ?? { US: online.US ? "here" : "offline", USSR: online.USSR ? "here" : "offline" };
   }
 
   private open(): void {
@@ -137,7 +171,7 @@ export class OnlineGame {
         this.connected = false;
         this.link = null;
         if (this.status !== "desync") this.status = "offline";
-        this.online = { US: false, USSR: false };
+        this.setPresence({ US: false, USSR: false });
         this.host.changed();
         this.retry();
       },
@@ -167,8 +201,12 @@ export class OnlineGame {
 
   private onMessage(m: ServerMessage): void {
     if (m.t === "presence") {
-      this.online = m.online;
+      this.setPresence(m.online, m.seen);
       this.host.changed();
+      return;
+    }
+    if (m.t === "activity") {
+      this.host.activity?.(m.by);
       return;
     }
     if (m.t === "error") {
@@ -179,7 +217,8 @@ export class OnlineGame {
       this.connected = true;
       this.status = "online";
       this.error = "";
-      this.online = m.online;
+      this.setPresence(m.online, m.seen);
+      if (!this.visible) this.link?.send({ t: "visible", visible: false });
       if (this.seed !== m.seed || this.side !== m.side) {
         this.seed = m.seed;
         this.side = m.side;
@@ -296,4 +335,21 @@ export function seatLink(pageUrl: string, room: string, seat: string, invite?: s
   u.searchParams.set("seat", seat);
   if (invite) u.searchParams.set("invite", invite);
   return u.toString();
+}
+
+/** The relay's VAPID key, to subscribe with; null when the relay sends no pushes. */
+export async function pushKey(endpoint: string): Promise<string | null> {
+  const res = await fetch(`${endpoint.replace(/\/+$/, "")}/push-key`);
+  if (!res.ok) return null;
+  return ((await res.json()) as PushKeyResponse).key;
+}
+
+/** Tell the relay to push to this subscription when it is `seat`'s move in `room`. */
+export async function subscribeSeat(endpoint: string, room: string, seat: string, body: SubscribeRequest): Promise<void> {
+  const res = await fetch(`${endpoint.replace(/\/+$/, "")}/rooms/${encodeURIComponent(room)}/push?seat=${encodeURIComponent(seat)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${res.status}`);
 }

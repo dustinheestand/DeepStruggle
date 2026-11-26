@@ -5,18 +5,29 @@
  *   POST /rooms                      {engine}          -> {room, seed, seats: {US, USSR}}
  *   GET  /rooms/<room>?seat=<secret>                   -> the game so far (RoomSnapshot)
  *   GET  /rooms/<room>/ws?seat=<secret>  (WebSocket)   -> the live game (online_protocol.ts)
+ *   POST /rooms/<room>/push?seat=<secret> {subscription, url} -> tell this phone when it is the seat's move
+ *   GET  /push-key                                     -> the VAPID public key to subscribe with
  *   GET  /health
  */
 import { DurableObject } from "cloudflare:workers";
 import {
-  CreateRoomResponse, SEAT_NAMES, Seat, ServerMessage,
+  CreateRoomResponse, NextToMove, PushKeyResponse, PushPayload, SEAT_NAMES, Seat, ServerMessage, SubscribeRequest,
 } from "../../ui/src/game/online_protocol";
-import { RoomData, applyMove, parseClientMessage, seatOf, snapshot, syncMessage } from "./room";
+import {
+  RoomData, addPushTarget, applyMove, onlineOf, parseClientMessage, presenceOf, removePushTarget, seatOf, snapshot,
+  syncMessage,
+} from "./room";
+import { isSubscription, sendPush } from "./push";
 
 export interface Env {
   ROOMS: DurableObjectNamespace<Room>;
   /** Comma-separated origins the page is served from; unset or "*": any. */
   ALLOWED_ORIGINS?: string;
+  /** VAPID (RFC 8292): the public key (uncompressed point, base64url), its private JWK (a secret),
+   *  and the contact the push services are given. Without them no push is sent. */
+  VAPID_PUBLIC?: string;
+  VAPID_PRIVATE_JWK?: string;
+  VAPID_SUBJECT?: string;
 }
 
 const ROOM_RE = /^[A-Za-z0-9_-]{16,32}$/;
@@ -26,9 +37,13 @@ function randomToken(bytes: number): string {
   return btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+function origins(env: Env): string[] {
+  return (env.ALLOWED_ORIGINS ?? "*").split(",").map(s => s.trim()).filter(Boolean);
+}
+
 function allowedOrigin(req: Request, env: Env): string | null {
   const origin = req.headers.get("Origin");
-  const list = (env.ALLOWED_ORIGINS ?? "*").split(",").map(s => s.trim()).filter(Boolean);
+  const list = origins(env);
   if (list.includes("*")) return origin ?? "*";
   return origin && list.includes(origin) ? origin : null;
 }
@@ -63,6 +78,12 @@ export default {
     // A browser always names its page's origin on a POST and a WebSocket; anything else is refused.
     if (req.headers.get("Origin") !== null && !origin) return json({ error: "origin not allowed" }, 403, null);
 
+    if (url.pathname === "/push-key" && req.method === "GET") {
+      if (!env.VAPID_PUBLIC || !env.VAPID_PRIVATE_JWK) return json({ error: "no push here" }, 404, origin);
+      const reply: PushKeyResponse = { key: env.VAPID_PUBLIC };
+      return json(reply, 200, origin);
+    }
+
     if (url.pathname === "/rooms" && req.method === "POST") {
       if (!origin) return json({ error: "origin not allowed" }, 403, null);
       const body = await req.json().catch(() => null) as { engine?: unknown } | null;
@@ -76,22 +97,49 @@ export default {
       return json(reply, 200, origin);
     }
 
-    const m = url.pathname.match(/^\/rooms\/([^/]+)(\/ws)?$/);
-    if (m && req.method === "GET" && ROOM_RE.test(m[1])) {
+    const m = url.pathname.match(/^\/rooms\/([^/]+)(\/ws|\/push)?$/);
+    if (m && ROOM_RE.test(m[1])) {
       const stub = env.ROOMS.get(env.ROOMS.idFromName(m[1]));
-      if (m[2]) {
+      const seat = url.searchParams.get("seat");
+      if (m[2] === "/ws" && req.method === "GET") {
         if (req.headers.get("Upgrade") !== "websocket") return json({ error: "expected a WebSocket" }, 426, origin);
         return stub.fetch(req);
       }
-      const snap = await stub.read(url.searchParams.get("seat"));
-      return snap ? json(snap, 200, origin) : json({ error: "no such room or seat" }, 404, origin);
+      if (m[2] === "/push" && req.method === "POST") {
+        if (!origin) return json({ error: "origin not allowed" }, 403, null);
+        const body = await req.json().catch(() => null) as SubscribeRequest | null;
+        if (!body || !isSubscription(body.subscription) || !seatPageOk(body.url, m[1], env)) {
+          return json({ error: "not a push subscription for this room" }, 400, origin);
+        }
+        const ok = await stub.subscribe(seat, { subscription: body.subscription, url: body.url });
+        return ok ? json({ ok: true }, 200, origin) : json({ error: "no such room or seat" }, 404, origin);
+      }
+      if (!m[2] && req.method === "GET") {
+        const snap = await stub.read(seat);
+        return snap ? json(snap, 200, origin) : json({ error: "no such room or seat" }, 404, origin);
+      }
     }
     return json({ error: "not found" }, 404, origin);
   },
 };
 
+/** A seat's page, to open from a notification: on the page's own origin, naming this room. */
+function seatPageOk(raw: unknown, room: string, env: Env): boolean {
+  if (typeof raw !== "string" || raw.length > 600) return false;
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return false;
+  }
+  const list = origins(env);
+  return (list.includes("*") || list.includes(u.origin)) && u.searchParams.get("room") === room;
+}
+
 interface Attachment {
   side: Seat;
+  /** The page is in front of its player (its last "visible"; a page that has said nothing is). */
+  visible: boolean;
 }
 
 /** One game. Its sockets hibernate between moves, so an idle game costs nothing. */
@@ -109,10 +157,14 @@ export class Room extends DurableObject<Env> {
     return this.data;
   }
 
+  private async save(): Promise<void> {
+    if (this.data) await this.ctx.storage.put("room", this.data);
+  }
+
   async init(d: RoomData): Promise<void> {
     if (await this.load()) throw new Error("room exists");
-    await this.ctx.storage.put("room", d);
     this.data = d;
+    await this.save();
   }
 
   async read(secret: string | null) {
@@ -121,14 +173,35 @@ export class Room extends DurableObject<Env> {
     return d && side ? snapshot(d, side) : null;
   }
 
-  private online(except?: WebSocket): Record<Seat, boolean> {
-    const on: Record<Seat, boolean> = { US: false, USSR: false };
+  async subscribe(secret: string | null, target: { subscription: SubscribeRequest["subscription"]; url: string }): Promise<boolean> {
+    const d = await this.load();
+    const side = d ? seatOf(d, secret) : null;
+    if (!d || !side) return false;
+    addPushTarget(d, side, target);
+    await this.save();
+    return true;
+  }
+
+  private sockets(except?: WebSocket): Array<{ ws: WebSocket; a: Attachment }> {
+    const out: Array<{ ws: WebSocket; a: Attachment }> = [];
     for (const ws of this.ctx.getWebSockets()) {
       if (ws === except || ws.readyState !== WebSocket.OPEN) continue;
       const a = ws.deserializeAttachment() as Attachment | null;
-      if (a) on[a.side] = true;
+      if (a) out.push({ ws, a });
     }
-    return on;
+    return out;
+  }
+
+  private seen(except?: WebSocket) {
+    return presenceOf(this.sockets(except).map(s => ({ side: s.a.side, visible: s.a.visible !== false })));
+  }
+
+  private send(ws: WebSocket, m: ServerMessage): void {
+    try {
+      ws.send(JSON.stringify(m));
+    } catch {
+      // Closing: its close handler tells the others.
+    }
   }
 
   private broadcast(m: ServerMessage, except?: WebSocket): void {
@@ -138,9 +211,16 @@ export class Room extends DurableObject<Env> {
       try {
         ws.send(raw);
       } catch {
-        // Closing: its close handler tells the others.
+        // Closing.
       }
     }
+  }
+
+  /** Tell every page the presences. `gone`: a socket closing, counted out and not told; `skip`: a
+   *  socket counted but not told (the one just connected, which its sync told). */
+  private presence(gone?: WebSocket, skip?: WebSocket): void {
+    const seen = this.seen(gone);
+    this.broadcast({ t: "presence", online: onlineOf(seen), seen }, gone ?? skip);
   }
 
   async fetch(req: Request): Promise<Response> {
@@ -150,9 +230,9 @@ export class Room extends DurableObject<Env> {
     const pair = new WebSocketPair();
     const [client, server] = [pair[0], pair[1]];
     this.ctx.acceptWebSocket(server, [side]);
-    server.serializeAttachment({ side } satisfies Attachment);
-    server.send(JSON.stringify(syncMessage(d, side, this.online())));
-    this.broadcast({ t: "presence", online: this.online() }, server);
+    server.serializeAttachment({ side, visible: true } satisfies Attachment);
+    server.send(JSON.stringify(syncMessage(d, side, this.seen())));
+    this.presence(undefined, server);
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -162,20 +242,65 @@ export class Room extends DurableObject<Env> {
     if (!d || !a || !SEAT_NAMES.includes(a.side)) return;
     const msg = typeof raw === "string" ? parseClientMessage(raw) : null;
     if (!msg) {
-      ws.send(JSON.stringify({ t: "error", why: "malformed message" } satisfies ServerMessage));
+      this.send(ws, { t: "error", why: "malformed message" });
+      return;
+    }
+    if (msg.t === "visible") {
+      ws.serializeAttachment({ ...a, visible: msg.visible } satisfies Attachment);
+      this.presence();
+      return;
+    }
+    if (msg.t === "activity") {
+      for (const s of this.sockets()) if (s.a.side !== a.side) this.send(s.ws, { t: "activity", by: a.side });
       return;
     }
     const r = applyMove(d, msg, a.side);
     if (r.kind === "stale") {
-      ws.send(JSON.stringify(syncMessage(d, a.side, this.online())));
+      this.send(ws, syncMessage(d, a.side, this.seen()));
       return;
     }
     if (r.kind === "bad") {
-      ws.send(JSON.stringify({ t: "error", why: r.why } satisfies ServerMessage));
+      this.send(ws, { t: "error", why: r.why });
       return;
     }
-    await this.ctx.storage.put("room", d);
+    await this.save();
     this.broadcast(r.message);
+    if (msg.next && msg.next.side !== a.side) await this.notify(d, msg.next);
+  }
+
+  /** It is `next.side`'s move: tell its phones, unless it has the game in front of it. */
+  private async notify(d: RoomData, next: NextToMove): Promise<void> {
+    const env = this.env;
+    if (!env.VAPID_PUBLIC || !env.VAPID_PRIVATE_JWK) return;
+    if (this.seen()[next.side] === "here") return;
+    const targets = d.push?.[next.side] ?? [];
+    if (!targets.length) return;
+    const vapid = {
+      subject: env.VAPID_SUBJECT || "https://github.com/",
+      publicKey: env.VAPID_PUBLIC,
+      privateJwk: JSON.parse(env.VAPID_PRIVATE_JWK) as JsonWebKey,
+    };
+    let changed = false;
+    await Promise.all(targets.map(async t => {
+      const payload: PushPayload = {
+        title: "Twilight Struggle",
+        body: next.note ? `${next.note} -- your move` : "Your move",
+        url: t.url,
+        tag: d.room,
+      };
+      try {
+        const status = await sendPush(t.subscription, payload, vapid);
+        if (status === 404 || status === 410) {
+          removePushTarget(d, next.side, t.subscription.endpoint);
+          changed = true;
+        } else if (status >= 400) {
+          console.warn(`push to ${new URL(t.subscription.endpoint).host}: HTTP ${status}`);
+        }
+      } catch (e) {
+        console.warn("push failed:", e);
+      }
+    }));
+    if (changed) await this.save();
   }
 
   async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
@@ -184,10 +309,10 @@ export class Room extends DurableObject<Env> {
     } catch {
       // Already closed.
     }
-    this.broadcast({ t: "presence", online: this.online(ws) }, ws);
+    this.presence(ws);
   }
 
   async webSocketError(ws: WebSocket): Promise<void> {
-    this.broadcast({ t: "presence", online: this.online(ws) }, ws);
+    this.presence(ws);
   }
 }

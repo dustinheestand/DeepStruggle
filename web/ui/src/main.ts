@@ -1510,11 +1510,21 @@ export class TSApp {
         else this.refresh();
         this.maybeInvite();
       },
+      // The side to move once the steps are in: the relay notifies that player's phone.
+      next: () => {
+        const p = engine.decisionPlayer();
+        const d: Seat | null = p > 0 ? "US" : p < 0 ? "USSR" : null;
+        return d && d !== this.online?.side ? { side: d, note: "" } : null;
+      },
     });
     this.renderOnlineBar();
     this.online.start();
     // A phone lets a background tab's connection die: back in front, connect afresh.
-    const wake = () => { if (document.visibilityState === "visible") this.online?.wake(true); };
+    const wake = () => {
+      const visible = document.visibilityState === "visible";
+      this.online?.setVisible(visible);
+      if (visible) this.online?.wake(true);
+    };
     document.addEventListener("visibilitychange", wake);
     window.addEventListener("online", wake);
     window.addEventListener("pageshow", (e) => { if (e.persisted) wake(); });

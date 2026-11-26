@@ -383,3 +383,43 @@ body.play-starting .play-decision { display: none; }
 .space-ability.us { background: rgba(91, 155, 255, 0.15); }
 .space-ability.ussr { background: rgba(255, 92, 92, 0.15); }
 .space-next { font-size: 12px; margin-top: 4px; }
+
+/* The other player's presence and a pulse at each of their taps; the notification bell. */
+.presence {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: 1px;
+}
+.presence-here { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+.presence-away { background: #eab308; }
+.presence-offline { background: #ef4444; }
+.pulse { color: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.btn-bell { min-height: 28px; padding: 2px 8px; font-size: 12px; margin-left: 4px; }
+
+/* Your games, on the start screen. */
+.game-list { display: flex; flex-direction: column; gap: 6px; }
+.game-link {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+.paste-link { display: flex; gap: 8px; margin-top: 10px; }
+.paste-link input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg);
+  color: inherit;
+}

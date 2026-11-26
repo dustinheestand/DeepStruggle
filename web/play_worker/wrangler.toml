@@ -10,6 +10,10 @@ preview_urls = false
 [vars]
 # The page's origins: this fork's GitHub Pages, and the local dev and files servers.
 ALLOWED_ORIGINS = "https://dustinheestand.github.io,http://localhost:5173,http://localhost:8000"
+# Web Push (src/push.ts): the VAPID public key pages subscribe with, and the contact the push
+# services are given. Its private half is the secret VAPID_PRIVATE_JWK (`wrangler secret put`).
+VAPID_PUBLIC = "BOxkryhYUhG0rKiupTlzNGxNzsxTaGk7d057K6daChktEWV65R5gU8vykwnDrHgWQ0LwcE7RuPfvwJo13VMNzkQ"
+VAPID_SUBJECT = "https://dustinheestand.github.io/DeepStruggle/"
 
 [[durable_objects.bindings]]
 name = "ROOMS"

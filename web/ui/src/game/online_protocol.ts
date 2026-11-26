@@ -41,15 +41,60 @@ export interface RoomSnapshot {
   steps: WireStep[];
 }
 
+/** A seat's presence: its page open in front of its player, open behind something (a background
+ *  tab, a locked phone), or not connected. */
+export type Presence = "here" | "away" | "offline";
+
 export type ServerMessage =
   /** On connecting, and again whenever the page's view of the list is out of date. */
-  | { t: "sync"; seed: number; engine: string; side: Seat; steps: WireStep[]; online: Record<Seat, boolean> }
+  | { t: "sync"; seed: number; engine: string; side: Seat; steps: WireStep[]; online: Record<Seat, boolean>; seen?: Record<Seat, Presence> }
   /** Steps appended at `at`, by `by`: sent to both pages, so the mover's copy is its ack. */
   | { t: "moves"; at: number; steps: WireStep[]; by: Seat }
-  | { t: "presence"; online: Record<Seat, boolean> }
+  | { t: "presence"; online: Record<Seat, boolean>; seen?: Record<Seat, Presence> }
+  /** The other player tapped something: no more than that (play.html shows a pulse). */
+  | { t: "activity"; by: Seat }
   | { t: "error"; why: string };
 
-export type ClientMessage = { t: "move"; at: number; steps: WireStep[] };
+/** Who moves after a move, as the mover's page sees it: the relay tells that player's phone (Web
+ *  Push) unless that player has the game in front of them. `note`: the move in a few words. */
+export interface NextToMove {
+  side: Seat;
+  note: string;
+}
+
+export type ClientMessage =
+  | { t: "move"; at: number; steps: WireStep[]; next?: NextToMove }
+  /** The page is in front of its player, or not (a background tab, a locked phone). */
+  | { t: "visible"; visible: boolean }
+  /** The player tapped something (throttled by the page); passed on to the other seat, not kept. */
+  | { t: "activity" };
+
+/** A browser's push subscription (PushSubscription.toJSON()), and the seat's page to open from it. */
+export interface PushSubscriptionJSON {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+}
+
+/** POST /rooms/<room>/push?seat=<secret>. */
+export interface SubscribeRequest {
+  subscription: PushSubscriptionJSON;
+  url: string;
+}
+
+/** GET /push-key: the relay's VAPID public key, for PushManager.subscribe. */
+export interface PushKeyResponse {
+  key: string;
+}
+
+/** What a push carries to the service worker (web/ui/public/sw.js). */
+export interface PushPayload {
+  title: string;
+  body: string;
+  url: string;
+  tag: string;
+}
+
+export const MAX_NOTE = 140;
 
 export function isWireStep(v: unknown): v is WireStep {
   return Array.isArray(v) && v.length === 4 &&

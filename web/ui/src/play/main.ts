@@ -26,16 +26,17 @@ import { GameState, MicroAction, RegionScores, RegionalStatus } from "../types";
 import { ActionHud } from "../action_hud";
 import { redactState } from "../game/view";
 import { lastTurnOf } from "../game/last_turn";
-import { OnlineGame, createRoom, roomSocketUrl, seatLink, webSocketConnect } from "../game/online";
+import { OnlineGame, createRoom, pushKey, roomSocketUrl, seatLink, subscribeSeat, webSocketConnect } from "../game/online";
 import { Seat, otherSeat } from "../game/online_protocol";
 import { applyWireSteps, sessionSteps, startOnlineGame } from "../game/online_session";
 import { PLAY_ENDPOINT } from "../build_info";
 import { CARDS_METADATA, MAP_METADATA } from "../metadata";
 import { escapeHtml } from "../html";
 import { lineHtml, messageHtml } from "../game/log";
+import { groupLog } from "../game/log_view";
 import { effectNameMessage } from "../cards_view";
 import { spaceRaceBoxes } from "../tracks_view";
-import { cardDescription, cardName, countryName, initLanguage, regionName, sideName, t } from "../i18n";
+import { cardDescription, cardName, countryName, initLanguage, regionName, renderEnglish, sideName, t } from "../i18n";
 import {
   Count, HistoryEntry, countriesById, REGIONS, SCORING_CARDS, SE_ASIA, Upshot, cardWhere, countText, history, regionCountries,
   regionCounts, revealed, spaceAbilities,
@@ -51,6 +52,33 @@ const sideCls = (s: string) => (s === "US" ? "us" : s === "USSR" ? "ussr" : "");
 function deciderOf(s: GameState): Seat | null {
   const p = s.decision_context?.decision_player;
   return p === "US" || p === "USSR" ? p : null;
+}
+
+const GAMES_KEY = "ts.play.games";
+
+interface SavedSeat {
+  room: string;
+  side: Seat;
+  url: string;
+  at: string;
+}
+
+function loadGames(): SavedSeat[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(GAMES_KEY) || "[]");
+    return Array.isArray(v) ? v.filter(g => g && typeof g.url === "string" && (g.side === "US" || g.side === "USSR")) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** A VAPID key (base64url) as PushManager.subscribe takes it. */
+function urlB64ToBytes(s: string): Uint8Array<ArrayBuffer> {
+  const t64 = s.replace(/-/g, "+").replace(/_/g, "/");
+  const bin = atob(t64 + "=".repeat((4 - (t64.length % 4)) % 4));
+  const out = new Uint8Array(new ArrayBuffer(bin.length));
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
 }
 
 class PlayApp {
@@ -84,6 +112,10 @@ class PlayApp {
     this.seat = p.get("seat") || "";
     this.invite = p.get("invite") || "";
     this.hud.online = true;   // no die to force here, and the hidden side is a person
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, { scope: import.meta.env.BASE_URL })
+        .catch(e => console.warn("service worker:", e));
+    }
     this.bindChrome();
     try {
       this.engine = await WasmEngine.load();
@@ -115,10 +147,23 @@ class PlayApp {
     this.main().innerHTML = `<div class="play-start">
       <h1>Twilight Struggle</h1>
       ${online}
+      ${this.gamesHtml()}
       <h2>${t("app:play.practiceTitle")}</h2>
       <p class="play-dim">${t("app:play.practiceText")}</p>
       <button class="btn btn-secondary btn-big" data-start="practice">${t("app:play.practice")}</button>
     </div>`;
+    this.main().querySelector<HTMLFormElement>("[data-paste]")?.addEventListener("submit", e => {
+      e.preventDefault();
+      const raw = String(new FormData(e.target as HTMLFormElement).get("link") || "").trim();
+      try {
+        const u = new URL(raw);
+        const room = u.searchParams.get("room"), seat = u.searchParams.get("seat");
+        if (!room || !seat) throw new Error("no room");
+        location.assign(seatLink(location.href, room, seat, u.searchParams.get("invite") ?? undefined));
+      } catch {
+        this.toast(t("app:play.badLink"));
+      }
+    });
     this.main().querySelectorAll<HTMLButtonElement>("[data-start]").forEach(b => b.addEventListener("click", async () => {
       const what = b.dataset.start!;
       if (what === "practice") {
@@ -140,6 +185,21 @@ class PlayApp {
     }));
   }
 
+  /** The games this browser has a seat in, and a box to paste a game link into (a phone's installed
+   *  app keeps storage apart from its browser, so a link from a message lands in the browser). */
+  private gamesHtml(): string {
+    const games = loadGames();
+    const rows = games.map(g => `<a class="game-link" href="${escapeHtml(g.url)}">
+        <span class="${sideCls(g.side)}">${sideName(g.side)}</span>
+        <span class="play-dim">${escapeHtml(new Date(g.at).toLocaleDateString())}</span></a>`).join("");
+    return `<h2>${t("app:play.yourGames")}</h2>
+      ${rows ? `<div class="game-list">${rows}</div>` : `<p class="play-dim">${t("app:play.noGames")}</p>`}
+      <form class="paste-link" data-paste>
+        <input name="link" type="url" placeholder="${escapeHtml(t("app:play.pastePlaceholder"))}" autocomplete="off">
+        <button class="btn btn-secondary">${t("app:play.open")}</button>
+      </form>`;
+  }
+
   private startOnline() {
     if (!PLAY_ENDPOINT) {
       this.main().innerHTML = `<p class="play-error">${t("app:online.noRelay")}</p>`;
@@ -152,6 +212,7 @@ class PlayApp {
         startOnlineGame(s, seed);
         this.boardDirty = true;
         this.committed = 0;
+        queueMicrotask(() => this.rememberGame());
         if (roomEngine && roomEngine !== this.engine.fingerprint) {
           this.toast(t("app:online.otherEngine", { room: roomEngine.slice(0, 8), page: this.engine.fingerprint.slice(0, 8) }), 8000);
         }
@@ -169,13 +230,94 @@ class PlayApp {
         else this.update(false);
       },
       pushable: () => this.committed,
+      next: () => this.nextToMove(),
+      activity: () => {
+        this.activeUntil = Date.now() + 3500;
+        this.renderStatus();
+        setTimeout(() => this.renderStatus(), 3600);
+      },
     });
     this.renderStatus();
     this.online.start();
-    const wake = () => { if (document.visibilityState === "visible") this.online?.wake(true); };
+    const wake = () => {
+      const visible = document.visibilityState === "visible";
+      this.online?.setVisible(visible);
+      if (visible) this.online?.wake(true);
+    };
     document.addEventListener("visibilitychange", wake);
     window.addEventListener("online", wake);
     window.addEventListener("pageshow", e => { if (e.persisted) wake(); });
+    // Any tap is a sign of life for the other player (no more than that is sent).
+    document.addEventListener("pointerdown", () => this.online?.activity(), { passive: true });
+  }
+
+  /** Who moves after what is being sent, and this side's last play as the other side may read it. */
+  private nextToMove(): { side: Seat; note: string } | null {
+    const me = this.me;
+    if (!me) return null;
+    const full = this.session.state();
+    const d = deciderOf(full);
+    if (!d || d === me) return null;
+    const entries = groupLog(redactState(full, d).action_logs || []);
+    const mine = [...entries].reverse().find(e => e.player === me);
+    return { side: d, note: mine ? renderEnglish(mine.title) : "" };
+  }
+
+  /** Until when the other player's last tap shows. */
+  private activeUntil = 0;
+
+  // ---- notifications ----------------------------------------------------------------------------
+
+  private get notifyKey(): string {
+    return `ts.play.notify.${this.room}`;
+  }
+
+  private notifyState(): "on" | "ask" | "install" | "none" {
+    if (!this.online || !this.me) return "none";
+    try {
+      if (localStorage.getItem(this.notifyKey)) return "on";
+    } catch { /* no storage */ }
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    const standalone = (navigator as unknown as { standalone?: boolean }).standalone === true ||
+      matchMedia("(display-mode: standalone)").matches;
+    if (!("PushManager" in window) || !("serviceWorker" in navigator)) return ios && !standalone ? "install" : "none";
+    if (typeof Notification !== "undefined" && Notification.permission === "denied") return "none";
+    return "ask";
+  }
+
+  private async enableNotifications() {
+    const state = this.notifyState();
+    if (state === "install") {
+      this.sheet(`<h2>${t("app:play.notifyTitle")}</h2><p>${t("app:play.notifyInstall")}</p>`);
+      return;
+    }
+    if (state !== "ask") return;
+    try {
+      if ((await Notification.requestPermission()) !== "granted") throw new Error(t("app:play.notifyDenied"));
+      const key = await pushKey(PLAY_ENDPOINT);
+      if (!key) throw new Error(t("app:play.notifyNoRelay"));
+      const reg = await navigator.serviceWorker.ready;
+      const sub = (await reg.pushManager.getSubscription()) ??
+        await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToBytes(key) });
+      const json = sub.toJSON() as { endpoint: string; keys: { p256dh: string; auth: string } };
+      await subscribeSeat(PLAY_ENDPOINT, this.room, this.seat, { subscription: json, url: location.href });
+      try { localStorage.setItem(this.notifyKey, json.endpoint); } catch { /* no storage */ }
+      this.toast(t("app:play.notifyOn"));
+    } catch (e) {
+      this.toast(t("app:play.notifyFailed", { error: e instanceof Error ? e.message : String(e) }), 6000);
+    }
+    this.renderStatus();
+  }
+
+  // ---- your games -------------------------------------------------------------------------------
+
+  private rememberGame() {
+    if (!this.me) return;
+    try {
+      const list = loadGames().filter(g => g.room !== this.room);
+      list.unshift({ room: this.room, side: this.me, url: location.href, at: new Date().toISOString() });
+      localStorage.setItem(GAMES_KEY, JSON.stringify(list.slice(0, 20)));
+    } catch { /* no storage */ }
   }
 
   // ---- moving ---------------------------------------------------------------------------------
@@ -338,7 +480,11 @@ class PlayApp {
       else if (g.status === "desync") parts.push(t("app:online.desync", { error: escapeHtml(g.error) }));
       else if (g.side) {
         const them = otherSeat(g.side);
-        parts.push(t(g.online[them] ? "app:online.opponentHere" : "app:online.opponentAway", { side: sideName(them) }));
+        const p = g.seen[them];
+        const word = p === "here" ? t("app:online.opponentHere", { side: sideName(them) })
+          : p === "away" ? t("app:online.opponentAway", { side: sideName(them) }) : t("app:play.opponentOffline", { side: sideName(them) });
+        parts.push(`<span class="presence presence-${p}" title="${escapeHtml(t(`app:play.presenceTitle.${p}`))}"></span>${word}`);
+        if (Date.now() < this.activeUntil && p !== "offline") parts.push(`<span class="pulse">${t("app:play.active", { side: sideName(them) })}</span>`);
       }
       if (this.full && g.side && g.seed !== null) {
         if (this.full.is_terminal) parts.push(t("app:online.over"));
@@ -352,6 +498,9 @@ class PlayApp {
       text = parts.join(" · ");
       el.dataset.status = g.status;
     }
+    const bell = this.notifyState();
+    if (bell === "ask" || bell === "install") text += ` <button class="btn btn-bell" data-notify>${t("app:play.notify")}</button>`;
+    else if (bell === "on") text += ` <span class="play-dim" title="${escapeHtml(t("app:play.notifyOn"))}">🔔</span>`;
     el.innerHTML = text;
     el.classList.toggle("mine", mine && !this.practice);
     document.title = mine && !this.practice ? `● ${this.baseTitle}` : this.baseTitle;
@@ -703,6 +852,7 @@ class PlayApp {
         this.renderMain();
         return;
       }
+      if (el.closest("[data-notify]")) return void this.enableNotifications();
       if (el.closest("[data-undo]")) return this.undo();
       if (el.closest("[data-send]")) return this.send();
       if (el.closest("[data-download]")) return this.download();
