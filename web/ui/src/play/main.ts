@@ -112,6 +112,7 @@ class PlayApp {
     this.seat = p.get("seat") || "";
     this.invite = p.get("invite") || "";
     this.hud.online = true;   // no die to force here, and the hidden side is a person
+    this.hud.influenceHtml = (us, ussr) => `<span class="hud-inf"><span class="us">${us}</span>/<span class="ussr">${ussr}</span></span>`;
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, { scope: import.meta.env.BASE_URL })
         .catch(e => console.warn("service worker:", e));
@@ -613,8 +614,7 @@ class PlayApp {
     const boxes = spaceRaceBoxes();
     if (!boxes.length) return "";
     const held = spaceAbilities(s.space, boxes);
-    const pos = (side: Seat) =>
-      `<span class="${sideCls(side)}">${sideName(side)} <b>${s.space[side]}</b></span> <span class="play-dim">${escapeHtml(boxes[s.space[side]]?.name ?? "")}</span>`;
+    const pos = (side: Seat) => `<span class="${sideCls(side)}">${sideName(side)} <b>${s.space[side]}</b></span>`;
     const next = (side: Seat) => {
       const n = boxes[s.space[side] + 1];
       const tried = s.space_turns_used?.[side] ?? 0;

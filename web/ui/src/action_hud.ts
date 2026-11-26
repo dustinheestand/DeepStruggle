@@ -122,6 +122,8 @@ export class ActionHud {
   public selectedDieRoll: number = 0; // 0 = auto
   /** A game against a friend (main.ts startOnline): the hidden side is a person, and there is no die to force. */
   public online = false;
+  /** How a target's Influence is written (play.html: coloured numbers); the workbench's words when unset. */
+  public influenceHtml: ((us: number, ussr: number) => string) | null = null;
   /** Called when the HUD re-renders itself (die selector), so decorations can be re-applied. */
   public onRerender: (() => void) | null = null;
 
@@ -328,7 +330,7 @@ export class ActionHud {
             <button class="btn btn-secondary btn-block btn-hud-action btn-target-card" data-primary="${cid}" data-secondary="${this.selectedDieRoll}" style="margin-bottom: 6px; text-align: left; padding: 8px 10px; border: 1px solid rgba(255,255,255,0.12);">
               <div style="display: flex; justify-content: space-between; align-items: center;">
                 <span style="font-weight: bold; font-size: 13px;">${isBg ? '★ ' : ''}${t("hud:target.name", { name: cName, stab: cStab })}</span>
-                <span style="font-size: 11px; opacity: 0.85;">${t("hud:target.influence", { us: usInf, ussr: ussrInf })}</span>
+                <span style="font-size: 11px; opacity: 0.85;">${this.influenceHtml ? this.influenceHtml(usInf, ussrInf) : t("hud:target.influence", { us: usInf, ussr: ussrInf })}</span>
               </div>
             </button>
           `;
