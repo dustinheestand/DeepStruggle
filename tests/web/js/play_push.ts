@@ -34,7 +34,8 @@ const checks = {
   vapid_signature: verified,
   vapid_audience: claims.aud === "https://fcm.googleapis.com" && claims.exp === 1_000_000 + 12 * 3600 && claims.sub === "https://example.org/",
   vapid_key: m[4] === pub,
-  endpoints: isPushEndpoint("https://fcm.googleapis.com/fcm/send/x") && isPushEndpoint("https://web.push.apple.com/abc") &&
+  endpoints: isPushEndpoint("https://fcm.googleapis.com/fcm/send/x") && isPushEndpoint("https://web.push.apple.com/abc") && isPushEndpoint("https://jmt17.google.com/fcm/send/x") &&
+    !isPushEndpoint("https://evilgoogle.com/x") && !isPushEndpoint("https://google.com.evil.example/x") &&
     isPushEndpoint("https://updates.push.services.mozilla.com/wpush/v2/x") && !isPushEndpoint("https://evil.example/push") &&
     !isPushEndpoint("http://fcm.googleapis.com/x") && !isPushEndpoint("https://fcm.googleapis.com.evil.example/x"),
 };

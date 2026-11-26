@@ -118,7 +118,8 @@ export function isPushEndpoint(endpoint: string): boolean {
     return false;
   }
   const h = u.hostname;
-  return u.protocol === "https:" && (h === "fcm.googleapis.com" || h.endsWith(".push.apple.com") ||
+  // Chrome's endpoints: fcm.googleapis.com, and on Android now Google's own hosts (jmt17.google.com).
+  return u.protocol === "https:" && (h === "fcm.googleapis.com" || h.endsWith(".google.com") || h.endsWith(".push.apple.com") ||
     h.endsWith(".push.services.mozilla.com") || h === "updates.push.services.mozilla.com" || h.endsWith(".notify.windows.com"));
 }
 
