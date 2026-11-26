@@ -46,6 +46,14 @@
         <button id="btn-game-result" class="btn btn-primary btn-sm hidden" title="The result, and adding the game to the stats database" data-i18n="page:tech.result" data-i18n-title="page:tech.resultTitle">Result</button>
       </div>
 
+      <!-- A game against a friend (game/online.ts): who you are, the connection, whose move, the
+           invite link (the room maker's page only) and the game's record. Shown only online. -->
+      <div class="tech-group tech-online hidden" id="tech-online">
+        <span id="online-status" class="online-status" aria-live="polite"></span>
+        <button id="btn-online-invite" class="btn btn-primary btn-sm hidden" data-i18n="page:online.invite">Invite link</button>
+        <button id="btn-online-download" class="btn btn-secondary btn-sm" data-i18n="page:online.download">Download game</button>
+      </div>
+
       <div class="tech-group tech-model" id="tech-model">
         <span class="tech-label" data-i18n="page:tech.model">Model</span>
         <!-- The model and how it plays, in one line (main.ts renderModelModeLabels). A click opens
@@ -247,7 +255,35 @@
             <span class="mode-choice-title" data-i18n="page:tech.viewUssr">Play as USSR</span>
             <span class="mode-choice-text" data-i18n="page:mode.ussrText">The US's hand and headline stay hidden; the model plays the US. No hints: its win chances and move probabilities stay off unless you turn on Show analysis.</span>
           </button>
+          <!-- Shown when the page was built with a play relay (TS_PLAY_ENDPOINT). -->
+          <div id="mode-friend" class="mode-friend hidden">
+            <div class="mode-friend-title" data-i18n="page:online.friendTitle">Play a friend online</div>
+            <div class="mode-friend-text" data-i18n="page:online.friendText">Each of you sees only your own hand. Send your friend the invite link; the game waits while either of you is away.</div>
+            <div class="mode-friend-buttons">
+              <button id="mode-friend-us" class="btn btn-primary" data-side="US" data-i18n="page:online.asUs">I play the US</button>
+              <button id="mode-friend-ussr" class="btn btn-danger" data-side="USSR" data-i18n="page:online.asUssr">I play the USSR</button>
+            </div>
+          </div>
           <p class="mode-dialog-note" id="mode-dialog-note"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- The invite link of an online game (main.ts showInvite): the other seat's link, to send. -->
+    <div id="invite-dialog" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="invite-dialog-title">
+      <div class="modal-content invite-dialog-content">
+        <div class="modal-header">
+          <h2 id="invite-dialog-title" data-i18n="page:online.inviteTitle">Invite your friend</h2>
+          <button id="invite-dialog-close" class="btn-icon" title="Close (Esc)" data-i18n-title="page:dialog.closeTitle">✕</button>
+        </div>
+        <div class="modal-body">
+          <p id="invite-dialog-text"></p>
+          <input id="invite-link" class="invite-link" type="text" readonly>
+          <div class="invite-buttons">
+            <button id="invite-share" class="btn btn-primary hidden" data-i18n="page:online.share">Share…</button>
+            <button id="invite-copy" class="btn btn-secondary" data-i18n="page:online.copy">Copy link</button>
+          </div>
+          <p class="mode-dialog-note" data-i18n="page:online.inviteNote">Keep this page's own address too: it is your seat. Opening it on another device carries the game over.</p>
         </div>
       </div>
     </div>

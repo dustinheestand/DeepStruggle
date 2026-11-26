@@ -36,7 +36,10 @@ import { replayToPosition, withModelBits } from "./game/resume";
 import { loadStoredGame, storeGame } from "./game/saved_game";
 import { SEATS, sideRules } from "./game/seats";
 import { ResultDialog } from "./result_dialog";
-import { BUILD_COMMIT, BUILD_DIRTY } from "./build_info";
+import { BUILD_COMMIT, BUILD_DIRTY, PLAY_ENDPOINT } from "./build_info";
+import { OnlineGame, createRoom, roomSocketUrl, seatLink, webSocketConnect } from "./game/online";
+import { Seat, otherSeat } from "./game/online_protocol";
+import { applyWireSteps, sessionSteps, startOnlineGame } from "./game/online_session";
 import { escapeHtml, num } from "./html";
 import { bindLanguageSelects, initLanguage, onLanguageChange, sideName, t } from "./i18n";
 
@@ -122,6 +125,14 @@ export class TSApp {
   private badgeView: () => { text: string; cls: string; title?: string } = () => ({ text: t("app:engine.loading"), cls: "" });
   /** The search settings did not parse: their error stays shown, in the page's language. */
   private searchInvalid = false;
+  /** A game against a friend (game/online.ts), when the link names a room: `?room=&seat=`, and on
+   *  the room maker's page `&invite=`, the other seat's secret. */
+  private online: OnlineGame | null = null;
+  private onlineRoom = "";
+  private onlineSeat = "";
+  private onlineInvite = "";
+  /** The invite dialog has been offered on this page (once, to the room's maker, before the friend comes). */
+  private invitedOnce = false;
 
   constructor() {
     this.parseQueryParams();
@@ -190,6 +201,7 @@ export class TSApp {
       this.renderModelModeLabels();
       this.renderModeNote();
       this.renderState();
+      this.renderOnlineBar();
       if (this.isReplayMode) this.renderTrace();
     });
     this.boot();
@@ -218,6 +230,11 @@ export class TSApp {
     }
     this.runner = new RolloutRunner();
     this.session = new GameSession(this.engine);
+    if (this.onlineRoom) {
+      this.checkEngineFreshness();
+      this.startOnline();
+      return;
+    }
     if (!this.urlPosition || !(await this.resumeStoredGame(this.urlPosition))) {
       this.session.newGame(Math.floor(Math.random() * 1_000_000));
       if (this.urlPosition) {
@@ -423,6 +440,9 @@ export class TSApp {
     if (params.has("replay")) {
       this.isReplayMode = true;
     }
+    this.onlineRoom = params.get("room") || "";
+    this.onlineSeat = params.get("seat") || "";
+    this.onlineInvite = params.get("invite") || "";
     this.urlPosition = params.get("pos");
     this.urlModel = params.get("model");
     const auto = (params.get("auto") || "").toUpperCase();
@@ -803,6 +823,7 @@ export class TSApp {
    * on for the developer, off for a player, whom the readout would give hints.
    */
   private setView(v: ViewMode, rerender = true) {
+    if (this.online?.side && v !== this.online.side) v = this.online.side;   // online, you see only your side
     const changed = v !== this.view;
     this.view = v;
     const sel = document.getElementById("view-select") as HTMLSelectElement | null;
@@ -859,7 +880,7 @@ export class TSApp {
    * move by move instead of leaving the page. A dropped model file has no address and is left out.
    */
   private syncUrl() {
-    if (this.isReplayMode || !this.positionToken) return;
+    if (this.isReplayMode || !this.positionToken || this.online) return;   // an online game's link is its seat
     const params = new URLSearchParams(window.location.search);
     params.delete("game_id");
     params.delete("role");
@@ -893,7 +914,13 @@ export class TSApp {
       this.state = this.liveState;
       this.renderState();
     }
-    this.storeGame();
+    if (this.online) {
+      // The relay keeps an online game, not this browser; and the moves just made go to it.
+      this.online.push();
+      this.renderOnlineBar();
+    } else {
+      this.storeGame();
+    }
     this.offerResult();
     encodePosition(this.engine!.saveJson()).then(token => {
       if (version !== this.version) return;
@@ -953,6 +980,7 @@ export class TSApp {
   }
 
   private async loadModel(pick: ModelPick | null) {
+    if (this.online && pick) return;   // no model in a game between two people
     const load = ++this.modelLoads;
     this.analysisOff = !pick;
     this.liveAnalysis = undefined;
@@ -1337,11 +1365,14 @@ export class TSApp {
   private sendAction(action: MicroAction) {
     if (this.isReplayMode || !this.session) return;
     if (this.hiddenSideToMove()) {
-      this.refused(t("app:notYourMove", { side: sideName(opponentOf(this.view) ?? "") }));
+      const side = sideName(opponentOf(this.view) ?? "");
+      this.refused(this.online ? t("app:online.notYourMove", { side }) : t("app:notYourMove", { side }));
       return;
     }
+    if (this.online && (this.online.seed === null || this.online.status === "desync")) return;
     this.noteSettings();
-    const forcedDie = action.secondary_id ?? 0;
+    // Online, the engine always rolls: the dice come from the room's seed on both pages.
+    const forcedDie = this.online ? 0 : action.secondary_id ?? 0;
     const why = this.session.apply(action, forcedDie, this.moveHow("human"));
     if (why) {
       this.refused(why);
@@ -1413,6 +1444,9 @@ export class TSApp {
    */
   private cancelAction() {
     if (this.isReplayMode || !this.session || !this.engine) return;
+    // Online, both pages hold a move once it is made: there is nothing to take back to (and the
+    // Cancel button is hidden; Escape here closes dialogs).
+    if (this.online) return;
     if (this.autoPlayTimer !== null) {
       window.clearTimeout(this.autoPlayTimer);
       this.autoPlayTimer = null;
@@ -1438,6 +1472,182 @@ export class TSApp {
     }
     this.refresh();
   }
+  /**
+   * A game against a friend (game/online.ts): the room's seed and steps come from the play relay,
+   * the board is this side's view only, and there is no model, no take-back, no forced die and no
+   * debug tool -- each page plays the steps the other makes. The board stays empty until the relay
+   * answers: the seed, and with it the deal, is the room's.
+   */
+  private startOnline() {
+    const session = this.session!;
+    const engine = this.engine!;
+    document.body.classList.add("online-mode");
+    document.getElementById("tech-online")?.classList.remove("hidden");
+    this.analysisOff = true;
+    this.analysisPanel.showSource(null);
+    this.analysisPanel.setAutoSide("");
+    this.actionHud.selectedDieRoll = 0;
+    this.actionHud.online = true;
+    if (!PLAY_ENDPOINT) {
+      window.alert(t("app:online.noRelay"));
+      return;
+    }
+    this.online = new OnlineGame(webSocketConnect(roomSocketUrl(PLAY_ENDPOINT, this.onlineRoom, this.onlineSeat)), {
+      steps: () => sessionSteps(session),
+      start: (seed, side, roomEngine) => {
+        startOnlineGame(session, seed);
+        this.setView(side, false);
+        if (roomEngine && roomEngine !== engine.fingerprint) {
+          window.alert(t("app:online.otherEngine", { room: roomEngine.slice(0, 8), page: engine.fingerprint.slice(0, 8) }));
+        }
+      },
+      apply: (steps) => {
+        this.noteSettings();
+        return applyWireSteps(session, steps);
+      },
+      changed: () => {
+        if (this.online?.seed === null) this.renderOnlineBar();
+        else this.refresh();
+        this.maybeInvite();
+      },
+    });
+    this.renderOnlineBar();
+    this.online.start();
+    // A phone lets a background tab's connection die: back in front, connect afresh.
+    const wake = () => { if (document.visibilityState === "visible") this.online?.wake(true); };
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("online", wake);
+    window.addEventListener("pageshow", (e) => { if (e.persisted) wake(); });
+  }
+
+  /** The page title before an online game marked it with whose move it is. */
+  private baseTitle = document.title;
+
+  /** The online bar: you, the connection, the friend, whose move; and the tab's title. */
+  private renderOnlineBar() {
+    const g = this.online;
+    const el = document.getElementById("online-status");
+    if (!g || !el) return;
+    const me = g.side;
+    const parts: string[] = [];
+    if (me) parts.push(t("app:online.you", { side: sideName(me) }));
+    if (g.status === "connecting") parts.push(t("app:online.connecting"));
+    else if (g.status === "offline") parts.push(t("app:online.offline"));
+    else if (g.status === "desync") parts.push(t("app:online.desync", { error: g.error }));
+    else if (me) {
+      const them = otherSeat(me);
+      parts.push(t(g.online[them] ? "app:online.opponentHere" : "app:online.opponentAway", { side: sideName(them) }));
+    }
+    let mine = false;
+    if (me && this.engine && g.seed !== null) {
+      if (this.engine.isTerminal()) {
+        parts.push(t("app:online.over"));
+      } else {
+        const p = this.engine.decisionPlayer();
+        const mover: Seat | "" = p > 0 ? "US" : p < 0 ? "USSR" : "";
+        mine = mover === me;
+        if (mine) parts.push(t("app:online.yourMove"));
+        else if (mover) parts.push(t("app:online.theirMove", { side: sideName(mover) }));
+      }
+    }
+    el.textContent = parts.join(" · ");
+    el.dataset.status = g.status;
+    el.classList.toggle("online-your-move", mine);
+    document.title = mine ? `● ${this.baseTitle}` : this.baseTitle;
+    document.getElementById("btn-online-invite")?.classList.toggle("hidden", !this.onlineInvite);
+    const dl = document.getElementById("btn-online-download") as HTMLButtonElement | null;
+    // The replay holds both hands at every step: it is for after the game.
+    if (dl) dl.disabled = !this.engine?.isTerminal();
+  }
+
+  /** The room's maker, before the friend has come: offer the invite link once. */
+  private maybeInvite() {
+    const g = this.online;
+    if (!g?.side || !this.onlineInvite || this.invitedOnce || g.seed === null) return;
+    if (g.online[otherSeat(g.side)] || (this.session?.steps.length ?? 0) > 0) return;
+    this.invitedOnce = true;
+    this.showInvite();
+  }
+
+  private inviteLink(): string {
+    return seatLink(window.location.href, this.onlineRoom, this.onlineInvite);
+  }
+
+  private showInvite() {
+    const g = this.online;
+    const dialog = document.getElementById("invite-dialog");
+    if (!g?.side || !this.onlineInvite || !dialog) return;
+    const text = document.getElementById("invite-dialog-text");
+    if (text) text.textContent = t("app:online.inviteText", { side: sideName(otherSeat(g.side)) });
+    const input = document.getElementById("invite-link") as HTMLInputElement | null;
+    if (input) input.value = this.inviteLink();
+    const copy = document.getElementById("invite-copy");
+    if (copy) copy.textContent = t("page:online.copy");
+    document.getElementById("invite-share")?.classList.toggle("hidden", typeof navigator.share !== "function");
+    dialog.classList.remove("hidden");
+  }
+
+  private closeInvite() {
+    document.getElementById("invite-dialog")?.classList.add("hidden");
+  }
+
+  /** Play a friend: make a room on the relay and open this side's seat (the page loads it afresh). */
+  private async startFriendGame(side: Seat) {
+    if (!PLAY_ENDPOINT || !this.engine) return;
+    const note = document.getElementById("mode-dialog-note");
+    const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>("#mode-friend button"));
+    buttons.forEach(b => { b.disabled = true; });
+    if (note) note.textContent = t("app:online.creating");
+    try {
+      const r = await createRoom(PLAY_ENDPOINT, this.engine.fingerprint);
+      window.location.assign(seatLink(window.location.href, r.room, r.seats[side], r.seats[otherSeat(side)]));
+    } catch (e) {
+      buttons.forEach(b => { b.disabled = false; });
+      this.renderModeNote();
+      window.alert(t("app:online.createFailed", { error: e instanceof Error ? e.message : String(e) }));
+    }
+  }
+
+  /** The finished game as a .tslog.json replay, for analysis (the deepstruggle-review skill reads it). */
+  private downloadOnlineGame() {
+    if (!this.session || !this.engine?.isTerminal()) return;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(this.session.replay(), null, 1)], { type: "application/json" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ts_workbench_online_${this.onlineRoom}_${this.online?.side ?? ""}.tslog.json`;
+    a.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  private setupOnlineControls() {
+    if (PLAY_ENDPOINT && !this.onlineRoom) document.getElementById("mode-friend")?.classList.remove("hidden");
+    for (const id of ["mode-friend-us", "mode-friend-ussr"]) {
+      const b = document.getElementById(id);
+      b?.addEventListener("click", () => void this.startFriendGame(b.dataset.side === "USSR" ? "USSR" : "US"));
+    }
+    document.getElementById("btn-online-invite")?.addEventListener("click", () => this.showInvite());
+    document.getElementById("btn-online-download")?.addEventListener("click", () => this.downloadOnlineGame());
+    document.getElementById("invite-dialog-close")?.addEventListener("click", () => this.closeInvite());
+    document.getElementById("invite-dialog")?.addEventListener("click", (e) => {
+      if ((e.target as HTMLElement).id === "invite-dialog") this.closeInvite();
+    });
+    window.addEventListener("keydown", (e) => { if (e.key === "Escape") this.closeInvite(); });
+    document.getElementById("invite-share")?.addEventListener("click", () => {
+      navigator.share?.({ title: document.title, url: this.inviteLink() }).catch(() => {});
+    });
+    document.getElementById("invite-copy")?.addEventListener("click", async () => {
+      const copy = document.getElementById("invite-copy");
+      const input = document.getElementById("invite-link") as HTMLInputElement | null;
+      try {
+        await navigator.clipboard.writeText(this.inviteLink());
+      } catch {
+        input?.select();
+        document.execCommand("copy");
+      }
+      if (copy) copy.textContent = t("app:online.copied");
+    });
+  }
+
   private setupBottomResizer() {
     const resizer = document.getElementById("bottom-resizer");
     const bottomPanel = document.getElementById("bottom-panel");
@@ -1519,6 +1729,7 @@ export class TSApp {
       this.askMode("new");
     });
     document.getElementById("btn-game-result")?.addEventListener("click", () => this.openResult());
+    this.setupOnlineControls();
 
     // The model & search dialog: opened by the technical bar's model · mode label, closed by its
     // close button, a click on the backdrop, or Escape (the keyboard handler above).

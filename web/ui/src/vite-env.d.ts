@@ -5,4 +5,6 @@ interface ImportMetaEnv {
   readonly VITE_TS_BUILD_COMMIT?: string;
   readonly VITE_TS_BUILD_DIRTY?: string;
   readonly VITE_TS_STATS_ENDPOINT?: string;
+  /** The play relay (web/play_worker/): playing a friend online. */
+  readonly VITE_TS_PLAY_ENDPOINT?: string;
 }

@@ -1,0 +1,21 @@
+# The play relay (README.md): two people's game, passed between their pages. One Durable Object
+# per game keeps its steps; nothing else is stored.
+name = "ts-play-relay"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+# Served at https://ts-play-relay.<account subdomain>.workers.dev -- the page's TS_PLAY_ENDPOINT.
+workers_dev = true
+preview_urls = false
+
+[vars]
+# The page's origins: this fork's GitHub Pages, and the local dev and files servers.
+ALLOWED_ORIGINS = "https://dustinheestand.github.io,http://localhost:5173,http://localhost:8000"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+# SQLite-backed Durable Objects are on Cloudflare's free plan.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]

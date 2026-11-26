@@ -133,7 +133,8 @@ graph TD
 ├── web/
 │   ├── ui/                     # the browser workbench and the leaderboard page (web/ui/AGENTS.md)
 │   ├── server/                 # local files server + replay writer (web/server/AGENTS.md)
-│   └── stats_worker/           # Cloudflare Worker + D1: games people played against the models
+│   ├── stats_worker/           # Cloudflare Worker + D1: games people played against the models
+│   └── play_worker/            # Cloudflare Worker + Durable Objects: two people's online game (relay)
 ├── deploy/web/                 # Dockerfile (+ compose, README) deploying the workbench from GitHub
 │
 ├── tools/                      # CLIs (tools/README.md)
@@ -264,6 +265,11 @@ is hosted here. `tools/game_stats.py` exports the table, re-drives each game in 
 seated as the page seated it (a model's rule bits from its checkpoint, a person's from the build), and
 fits each model player's rating on Playdek's scale from the clean games
 ([`tools/README.md`](tools/README.md) §2d).
+
+Two people can **play each other online**, each in their own browser. Each page runs the engine.
+A Cloudflare Worker with one Durable Object per game keeps the agreed list of steps and passes it
+between the two pages; the dice come from the room's seed, so it never runs the engine
+([`web/play_worker/README.md`](web/play_worker/README.md), `web/ui/AGENTS.md` §3.12).
 
 ### 3.4 CLIs
 

@@ -34,7 +34,9 @@ web/ui/
 │   │                           # record.ts (a game for the stats database: log, tags, summary),
 │   │                           # saved_game.ts (the game kept in the browser, for a reload),
 │   │                           # seats.ts (the rule bits a side plays: live and played back),
-│   │                           # resume.ts (a reload's playback: models' bits, person rules)
+│   │                           # resume.ts (a reload's playback: models' bits, person rules),
+│   │                           # online.ts / online_protocol.ts / online_session.ts (a game
+│   │                           # against a friend through the play relay, web/play_worker/)
 │   ├── result_dialog.ts        # Game over: the result, how it was played, submit to the stats database
 │   ├── build_info.ts           # the commit the page was built from, the stats endpoint
 │   ├── analysis/               # model.ts (ONNX sources + onnxruntime-web), hf_catalog.ts (the
@@ -578,6 +580,35 @@ web/ui/
    - **The build.** `vite.config.ts` writes the commit (`git rev-parse HEAD`) and whether tracked
      files differed from it (`dirty`) into `build_info.ts`, so a submitted game names what to
      rebuild it at; the engine fingerprint comes from the engine itself.
+12. **Playing a friend online (`game/online*.ts`, `web/play_worker/`)**:
+   - **What travels.** A game between two people is the room's seed plus the agreed list of steps
+     (`online_protocol.ts`: a step is its four MicroAction fields). The dice come from the seed, so
+     each page plays every step in its own engine and the two stay bit-identical. The relay (a
+     Durable Object per room) appends a step only at the index it is at and sends it to both pages;
+     it does not run the engine.
+   - **The client (`online.ts` `OnlineGame`).** On every (re)connect the relay sends its list, and
+     `reconcile` extends the page's list, pushes what the relay lacks (moves made while offline:
+     only the side to move can move), or replays the relay's list from the seed when the two
+     differ. `moves` before this connection's `sync` are ignored. A step the engine refuses puts
+     the game in `desync` (different builds). It reconnects with backoff, and again whenever the
+     tab comes back to the front (`wake(true)`), since a phone kills a background socket without
+     closing it; a 15 s keep-alive (`ping`, which the relay auto-answers without waking) catches
+     the rest.
+   - **The page (`main.ts` `startOnline`).** `?room=&seat=` opens a seat (the maker's link adds
+     `&invite=`, the other seat's secret, for the invite dialog). The view is locked to the seat's
+     side (`setView`), there is no model, the die is never forced (`sendAction` uses 0), and undo,
+     New Game, the view select, the debug and replay tools and the analysis panel are hidden
+     (`body.online-mode`). `refresh` pushes new steps instead of storing the game in localStorage,
+     and `syncUrl` leaves the address alone, because the link is the seat. The online bar
+     (`#tech-online`) shows the side, the connection, the friend's presence and whose move it is
+     (also in the tab title). *Download game* (the `.tslog.json` replay, which holds both hands) is
+     enabled once the game is over.
+   - **Starting one.** The play-mode dialog's *Play a friend online* (`#mode-friend`, shown when the
+     build has `TS_PLAY_ENDPOINT`) makes a room and opens the maker's seat, which offers the invite
+     link (Web Share on a phone, else copy).
+   - **Tested** by `tests/web/test_online_play.py`: two pages and an in-memory relay running
+     `web/play_worker/src/room.ts` play a whole game with disconnects, offline moves and a
+     corrupted list, then end where the relay's list played from the seed ends.
 
 ---
 

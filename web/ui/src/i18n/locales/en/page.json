@@ -160,5 +160,17 @@
     "fast": "Fast",
     "export": "Export Replay",
     "load": "Load Replay"
+  },
+  "online": {
+    "friendTitle": "Play a friend online",
+    "friendText": "Each of you sees only your own hand. Send your friend the invite link; the game waits while either of you is away.",
+    "asUs": "I play the US",
+    "asUssr": "I play the USSR",
+    "invite": "Invite link",
+    "download": "Download game",
+    "inviteTitle": "Invite your friend",
+    "share": "Share…",
+    "copy": "Copy link",
+    "inviteNote": "Keep this page's own address too: it is your seat. Opening it on another device carries the game over."
   }
 }

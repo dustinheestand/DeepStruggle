@@ -51,5 +51,23 @@
     "round": "[T{{turn}} AR{{ar}}]",
     "player": "{{player}}:",
     "vpDelta": "{{vp}} VP"
+  },
+  "online": {
+    "you": "You: {{side}}",
+    "connecting": "connecting…",
+    "offline": "offline -- reconnecting",
+    "desync": "out of sync: {{error}}",
+    "opponentHere": "{{side}} is here",
+    "opponentAway": "{{side}} is away",
+    "yourMove": "your move",
+    "theirMove": "{{side}} to move",
+    "over": "game over",
+    "inviteText": "Send this link to the player of the {{side}}. Anyone with it can play that side.",
+    "copied": "Copied",
+    "creating": "Making the game…",
+    "createFailed": "Could not make the online game: {{error}}",
+    "otherEngine": "This game was started on another version of the page (engine {{room}}, yours {{page}}). Reload the page; if this stays, the two of you are on different builds and moves may not agree.",
+    "noRelay": "This page was built without a play relay, so it cannot open an online game.",
+    "notYourMove": "it is {{side}}'s move -- your friend plays that side"
   }
 }

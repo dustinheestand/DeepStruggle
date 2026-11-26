@@ -87,7 +87,8 @@
   "loadingEngine": "Loading the engine…",
   "hidden": {
     "toMove": "<strong>{{player}}</strong> to move — {{phase}}.",
-    "note": "Its options are hidden in the {{view}} view; the model plays this side (auto-play)."
+    "note": "Its options are hidden in the {{view}} view; the model plays this side (auto-play).",
+    "noteOnline": "Its options are hidden; your friend plays this side."
   },
   "prompt": {
     "resolvingEventCard": "<strong>{{player}}:</strong> Resolving Event (Card #{{card}}): Select a card:",

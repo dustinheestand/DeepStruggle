@@ -120,6 +120,8 @@ export class ActionHud {
   private container: HTMLElement;
   private onAction: (action: MicroAction) => void;
   public selectedDieRoll: number = 0; // 0 = auto
+  /** A game against a friend (main.ts startOnline): the hidden side is a person, and there is no die to force. */
+  public online = false;
   /** Called when the HUD re-renders itself (die selector), so decorations can be re-applied. */
   public onRerender: (() => void) | null = null;
 
@@ -162,7 +164,7 @@ export class ActionHud {
     if (state.view_hidden_decision) {
       this.container.innerHTML = `<div class="hud-waiting">
         <div>${t("hud:hidden.toMove", { player, phase: escapeHtml(enumLabel("phase", phaseName)) })}</div>
-        <div class="hud-waiting-note">${t("hud:hidden.note", { view: escapeHtml(sideName(String(state.view))) })}</div>
+        <div class="hud-waiting-note">${this.online ? t("hud:hidden.noteOnline") : t("hud:hidden.note", { view: escapeHtml(sideName(String(state.view))) })}</div>
       </div>`;
       return;
     }
@@ -386,7 +388,7 @@ export class ActionHud {
     }
 
     let dieSelectorHtml = "";
-    if (showDieSelector) {
+    if (showDieSelector && !this.online) {
       dieSelectorHtml = `
         <div class="die-roll-selector-container">
           <div class="die-roll-header">

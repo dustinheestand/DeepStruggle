@@ -19,12 +19,14 @@ const dirty = commit !== '' && git('status', '--porcelain', '--untracked-files=n
 // (set by .github/workflows/pages.yml). The engine and model runtime are loaded relative to it.
 // TS_STATS_ENDPOINT: the stats database's Worker (web/stats_worker/); unset, games can only be
 // downloaded.
+// TS_PLAY_ENDPOINT: the play relay's Worker (web/play_worker/); unset, the page offers no online game.
 export default defineConfig({
   base: process.env.TS_WEB_BASE || '/',
   define: {
     'import.meta.env.VITE_TS_BUILD_COMMIT': JSON.stringify(commit),
     'import.meta.env.VITE_TS_BUILD_DIRTY': JSON.stringify(dirty ? '1' : ''),
     'import.meta.env.VITE_TS_STATS_ENDPOINT': JSON.stringify(process.env.TS_STATS_ENDPOINT || ''),
+    'import.meta.env.VITE_TS_PLAY_ENDPOINT': JSON.stringify(process.env.TS_PLAY_ENDPOINT || ''),
   },
   server: {
     port: 5173,

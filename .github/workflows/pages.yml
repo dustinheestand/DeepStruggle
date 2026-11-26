@@ -119,6 +119,8 @@ jobs:
           TS_PYTHON: python3
           # The stats database's Worker (web/stats_worker/README.md); unset, games are not submitted.
           TS_STATS_ENDPOINT: ${{ vars.TS_STATS_ENDPOINT }}
+          # The play relay's Worker (web/play_worker/README.md); unset, the page offers no online game.
+          TS_PLAY_ENDPOINT: ${{ vars.TS_PLAY_ENDPOINT }}
           # tools/playdek_estimate.py's output; unset, the leaderboard has no Playdek scale.
           TS_PLAYDEK_ESTIMATE: ${{ needs.playdek.outputs.ready == 'true' && format('{0}/playdek-estimate/playdek.json', github.workspace) || '' }}
         run: tools/scripts/build_web.sh

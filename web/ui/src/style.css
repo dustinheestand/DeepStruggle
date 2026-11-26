@@ -2694,3 +2694,71 @@ body.drop-target #map-container { outline: 3px dashed var(--warning); outline-of
 .language-control { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; font-size: 11px; }
 .language-control[hidden] { display: none; }
 .language-control select { font-size: 11px; padding: 3px 6px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-panel-solid); color: inherit; }
+
+/* ---- A game against a friend (main.ts startOnline) --------------------------------------- */
+/* Online, the page is one side's: no view to switch, no model, no take-back, no debug tools. */
+body.online-mode #view-select,
+body.online-mode #btn-new-game,
+body.online-mode #tech-model,
+body.online-mode #btn-undo-action,
+body.online-mode #btn-toggle-debug,
+body.online-mode #btn-toggle-replay,
+body.online-mode #analysis-panel {
+  display: none !important;
+}
+.online-status {
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+}
+.online-status[data-status="offline"],
+.online-status[data-status="connecting"] {
+  color: var(--text-dim);
+  border-style: dashed;
+}
+.online-status[data-status="desync"] {
+  color: #ff6b6b;
+  border-color: #ff6b6b;
+}
+.online-status.online-your-move {
+  border-color: var(--border-highlight);
+  color: var(--border-highlight);
+  font-weight: 600;
+}
+.mode-friend {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+.mode-friend-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.mode-friend-text {
+  font-size: 12px;
+  opacity: 0.85;
+  margin-bottom: 10px;
+}
+.mode-friend-buttons,
+.invite-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.invite-dialog-content {
+  max-width: 520px;
+  width: calc(100% - 32px);
+}
+.invite-link {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 13px;
+  padding: 8px;
+  margin: 8px 0 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-panel-solid);
+  color: inherit;
+}
