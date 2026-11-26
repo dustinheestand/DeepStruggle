@@ -527,7 +527,7 @@ class PlayApp {
 
   private renderTabs() {
     const handCount = this.shown?.hands?.[this.viewSide]?.length ?? 0;
-    document.querySelectorAll<HTMLButtonElement>(".play-tab").forEach(b => {
+    document.querySelectorAll<HTMLButtonElement>("button.play-tab").forEach(b => {
       b.classList.toggle("active", b.dataset.tab === this.tab);
       if (b.dataset.tab === "hand") b.textContent = `${t("app:play.tabHand")} (${handCount})`;
       if (b.dataset.tab === "board") b.textContent = t("app:play.tabBoard");
@@ -854,7 +854,7 @@ class PlayApp {
 
   private bindChrome() {
     this.bindPullToRefresh();
-    document.querySelectorAll<HTMLButtonElement>(".play-tab").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll<HTMLButtonElement>("button.play-tab").forEach(b => b.addEventListener("click", () => {
       this.tab = b.dataset.tab as Tab;
       if (this.tab !== "board") this.region = null;
       if (this.shown) {

@@ -439,3 +439,5 @@ body.play-starting .play-decision { display: none; }
   transition: height 0.15s;
 }
 .play-main { overscroll-behavior-y: contain; }
+/* The way back to this device's games, at the end of the tabs. */
+.play-games { flex: 0 0 44px; text-align: center; text-decoration: none; }
