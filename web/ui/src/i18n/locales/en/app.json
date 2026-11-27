@@ -213,7 +213,7 @@
       "trapped": "still trapped",
       "wins": "{{side}} wins"
     },
-    "viewCards": "Cards",
+    "viewGrid": "Grid",
     "viewMap": "Map"
   }
 }

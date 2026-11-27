@@ -114,8 +114,9 @@ class PlayApp {
   private collapsed = false;
   private baseTitle = document.title;
   /** A region as a grid of cards or as a map (region_map.ts); this device's choice. */
-  private regionView: "cards" | "map" = (() => {
-    try { return localStorage.getItem("ts.play.regionView") === "cards" ? "cards" : "map"; } catch { return "map"; }
+  private regionView: "grid" | "map" = (() => {
+    // "cards" is what the grid was called at first.
+    try { return ["grid", "cards"].includes(localStorage.getItem("ts.play.regionView") ?? "") ? "grid" : "map"; } catch { return "map"; }
   })();
 
   async boot() {
@@ -841,7 +842,7 @@ class PlayApp {
     const changed = new Map((s.last_turn?.countries || []).map(x => [x.id, x]));
     const byId = countriesById(s);
     const toggle = `<div class="view-toggle" role="group">
-        <button class="${this.regionView === "cards" ? "on" : ""}" data-region-view="cards">${t("app:play.viewCards")}</button>
+        <button class="${this.regionView === "grid" ? "on" : ""}" data-region-view="grid">${t("app:play.viewGrid")}</button>
         <button class="${this.regionView === "map" ? "on" : ""}" data-region-view="map">${t("app:play.viewMap")}</button>
       </div>`;
     const head = `<div class="region-head">
@@ -1252,7 +1253,7 @@ class PlayApp {
       }
       const view = el.closest<HTMLElement>("[data-region-view]");
       if (view) {
-        this.regionView = view.dataset.regionView === "map" ? "map" : "cards";
+        this.regionView = view.dataset.regionView === "map" ? "map" : "grid";
         try { localStorage.setItem("ts.play.regionView", this.regionView); } catch { /* no storage */ }
         this.renderMain();
         return;

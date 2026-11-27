@@ -675,7 +675,7 @@ web/ui/
    - **Making a game** may need the relay's password (`CREATE_PASSWORD`): `createRoomAsking`
      prompts for it and keeps the one that worked in `localStorage` (`ts.play.password`); the
      workbench's *Play a friend online* does the same. Joining needs only the link.
-   - **Region view**, by default a map (`region_map.ts`; *Cards* / *Map* under the region's name,
+   - **Region view**, by default a map (`region_map.ts`; *Grid* / *Map* under the region's name,
      kept per device in `ts.play.regionView`): each country a small card where `rules/map.json`
      puts it -- a 2-3 letter code (`ABBR`: DK, BG, BNL, ALG), its stability, both Influence chips --
      fitted to the page's width (across, a blend of its map position and its rank from the left, so
@@ -685,7 +685,7 @@ web/ui/
      dashed lines to the countries beside it are shortest without crossing a card or sitting on a
      neighbour line (Europe's USSR between FI, PL and RO). Southeast Asia is tinted, its counts on a
      line of their own. The layout depends only on the map, so it is the same on every phone. As
-     *Cards*, the countries are a grid of cards (short names as on the map, `SHORT_NAMES`), the
+     *Grid*, the countries are a grid of cards (short names as on the map, `SHORT_NAMES`), the
      stability and both Influence boxes on each. Either way a target's whole card is the button.
    - **A country's details** (`showCountry`, the sheet): region, stability, Influence, what each side
      needs to control it, the superpower beside it, and its neighbours as cards (a tap opens one's
