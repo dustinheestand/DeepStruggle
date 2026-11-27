@@ -629,8 +629,16 @@ web/ui/
      them, *Since your last move*: the other side's plays since yours (its ✕ hides it on this device
      until the other side plays again: `ts.play.happened.<room>` keeps the latest step dismissed).
      A tap on the Space Race block opens the whole track (`showSpace`): each box's Ops and roll, its
-     VP first / second, its privilege in its holder's colour while in force, and both markers. A tap opens the region's
-     countries as rows (battleground, stability, the two Influence boxes filled for the
+     VP first / second, its privilege in its holder's colour while in force, and both markers. Each
+     *In effect* chip opens the effect (`showEffect`): what it does, how long it lasts, the card it
+     comes from, in the colour `EFFECT_INFO_MAP` gives it -- the side it concerns, not always the side
+     it helps (Red Scare on the US), so the sheet never says "favours". A tap opens the region's
+     countries; its head gives what the scoring awards (`SCORING_VALUES`, read from the scoring
+     card's text: Presence, Domination, Control or "Control wins", +1 a battleground, +1 next to the
+     enemy where the card has it; Southeast Asia's 1 VP a country, Thailand 2), each standing held
+     now marked with a dot in its holder's colour. `tests/web/js/play_summary.ts` holds the values
+     to the engine's `base_vp` on boards built to put each region at each standing. The countries come
+     as rows (battleground, stability, the two Influence boxes filled for the
      controller) with the target buttons. Neighbours are not shown: the owner's players know the
      map, and it would crowd the rows.
    - **History**: every play newest first (`groupLog` over the log as your view may read it), each

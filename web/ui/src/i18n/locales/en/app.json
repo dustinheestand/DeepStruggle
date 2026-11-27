@@ -110,9 +110,19 @@
       "unseen": "unseen"
     },
     "scoringCard": "Scoring card:",
+    "scoring": {
+      "presence": "Presence {{vp}}",
+      "domination": "Domination {{vp}}",
+      "control": "Control {{vp}}",
+      "controlWins": "Control wins",
+      "bg": "+1 a battleground",
+      "adjacent": "+1 next to the enemy",
+      "seAsia": "1 VP a country, Thailand 2"
+    },
     "movedTitle": "Changed by the other side's last turn",
     "targets": "{{n}} to choose",
     "effects": "In effect",
+    "effectFrom": "From",
     "legend": "Counts are battlegrounds-countries controlled, US / USSR. ● marks what the other side's last turn changed. In a region, tap a country for its neighbours (a long press on one you can play to).",
     "coup": "Coup",
     "realign": "Realign",

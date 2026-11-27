@@ -34,14 +34,14 @@ import { CARDS_METADATA, MAP_METADATA } from "../metadata";
 import { escapeHtml } from "../html";
 import { LogLine, isCardArg, isCountryArg, lineHtml, messageHtml, param, strParam } from "../game/log";
 import { groupLog } from "../game/log_view";
-import { effectNameMessage } from "../cards_view";
+import { EFFECT_INFO_MAP, effectText } from "../cards_view";
 import { spaceRaceBoxes } from "../tracks_view";
 import { SHORT_NAMES } from "../map_view";
 import { ABBR, CARD_H, CARD_W, MAP_W, SP_H, SP_W, regionMap } from "./region_map";
 import { cardDescription, cardName, countryName, initLanguage, regionName, renderEnglish, sideName, t } from "../i18n";
 import {
   Count, HistoryEntry, countriesById, REGIONS, SCORING_CARDS, SE_ASIA, Upshot, cardWhere, countText, history, notableLines,
-  regionCountries, regionCounts, revealed, spaceAbilities,
+  regionCountries, regionCounts, revealed, SCORING_VALUES, spaceAbilities,
 } from "./summary";
 
 type Tab = "board" | "hand" | "history";
@@ -721,6 +721,26 @@ class PlayApp {
     return `<span class="us">${st(r.us.status)}</span> · <span class="ussr">${st(r.ussr.status)}</span>`;
   }
 
+  /**
+   * What the region's scoring awards, from its card: Presence, Domination and Control (or that
+   * Control wins), each standing a side holds now marked with a dot in its colour, then the bonuses.
+   * Southeast Asia's: 1 VP a country, Thailand 2.
+   */
+  private valuesHtml(slot: number): string {
+    if (slot === SE_ASIA.slot) return `<span class="vals">${t("app:play.scoring.seAsia")}</span>`;
+    const v = SCORING_VALUES.get(slot);
+    if (!v) return "";
+    const r = this.scores?.regions.find(x => x.slot === slot);
+    const level = (status: RegionalStatus, text: string) => {
+      const dots = (["US", "USSR"] as Seat[]).filter(side => r?.[side === "US" ? "us" : "ussr"].status === status)
+        .map(side => `<span class="${sideCls(side)}">●</span>`).join("");
+      return `<span class="val ${dots ? "val-held" : ""}">${text}${dots}</span>`;
+    };
+    const control = v.control === "wins" ? t("app:play.scoring.controlWins") : t("app:play.scoring.control", { vp: v.control });
+    return `<span class="vals">${level("PRESENCE", t("app:play.scoring.presence", { vp: v.presence }))} · ${level("DOMINATION", t("app:play.scoring.domination", { vp: v.domination }))} · ${level("CONTROL", control)}
+      <span class="play-dim">· ${t("app:play.scoring.bg")}${v.adjacent ? ` · ${t("app:play.scoring.adjacent")}` : ""}</span></span>`;
+  }
+
   private whereHtml(slot: number): string {
     const id = SCORING_CARDS.get(slot);
     if (id === undefined || !this.shown) return "";
@@ -749,8 +769,10 @@ class PlayApp {
         <div class="tile-line">${t("app:play.scoringCard")} ${this.whereHtml(r.slot)}</div>
       </button>`;
     }).join("");
-    const effects = (this.shown.flags || []).map(f => effectNameMessage(f)).filter(m => m !== null)
-      .map(m => `<span class="chip">${messageHtml(m!)}</span>`).join("");
+    const effects = (this.shown.flags || []).filter(f => EFFECT_INFO_MAP[f] && effectText(f)).map(f => {
+      const side = EFFECT_INFO_MAP[f].side;
+      return `<button class="chip chip-effect ${side === "US" || side === "USSR" ? `chip-${sideCls(side)}` : ""}" data-effect="${escapeHtml(f)}">${escapeHtml(effectText(f)!.name)}</button>`;
+    }).join("");
     return `${this.whatHappenedHtml()}
       ${this.spaceHtml()}
       <div class="tiles">${tiles}</div>
@@ -819,6 +841,23 @@ class PlayApp {
       <p class="play-dim">${t("app:play.spaceAttempts")} ${tried("US")} · ${tried("USSR")}</p>
       <div class="sp-track">${rows}</div>
       <p class="play-dim play-legend">${t("app:play.spaceLegend")}</p>
+    </div>`);
+  }
+
+  /** An effect in force, in the sheet: what it does, how long it lasts and the card it comes from (a
+   *  tap opens it), in the colour of the side the effect table gives it -- the side it concerns, which
+   *  is not always the side it helps (Red Scare on the US), so the page does not say "favours". */
+  private showEffect(flag: string) {
+    const info = EFFECT_INFO_MAP[flag], text = effectText(flag);
+    if (!info || !text) return;
+    const lasts = { PERMANENT: t("cards:effect.permanent"), TURN: t("cards:effect.turnOnly"),
+      CONDITIONAL: t("cards:effect.conditional"), SPACE_PERK: t("cards:effect.spacePerk") }[info.duration];
+    const side = info.side === "US" || info.side === "USSR" ? info.side : null;
+    this.sheet(`<div class="effect-sheet">
+      <h2 class="${side ? sideCls(side) : ""}">${escapeHtml(text.name)}</h2>
+      <p class="play-dim">${lasts}</p>
+      <p class="card-text">${escapeHtml(text.description)}</p>
+      ${info.cardId !== undefined ? `<div class="play-label">${t("app:play.effectFrom")}</div><div class="cards">${this.cardHtml(info.cardId)}</div>` : ""}
     </div>`);
   }
 
@@ -891,16 +930,17 @@ class PlayApp {
         ${c ? `<span class="tile-counts">${this.countsHtml(c.us, c.ussr)}</span>` : ""}
         <span class="tile-net">${this.netHtml(slot)}</span>
       </div>
+      <div class="tile-line">${this.valuesHtml(slot)}</div>
       <div class="tile-line">${this.standingHtml(slot)} · ${t("app:play.scoringCard")} ${this.whereHtml(slot)} ${toggle}</div>`;
     if (this.regionView === "map") {
       const sea = region === "Asia" ? counts?.get(SE_ASIA.slot) : undefined;
-      const seaLine = sea ? `<div class="tile-line"><span class="sea-key"></span>${escapeHtml(regionName(SE_ASIA.name))} ${this.countsHtml(sea.us, sea.ussr)} ${this.netHtml(SE_ASIA.slot)} ${this.whereHtml(SE_ASIA.slot)}</div>` : "";
+      const seaLine = sea ? `<div class="tile-line"><span class="sea-key"></span>${escapeHtml(regionName(SE_ASIA.name))} ${this.countsHtml(sea.us, sea.ussr)} ${this.netHtml(SE_ASIA.slot)} ${this.whereHtml(SE_ASIA.slot)} · ${this.valuesHtml(SE_ASIA.slot)}</div>` : "";
       return head + seaLine + this.regionMapHtml(region, targets, verb, new Set(changed.keys()), byId);
     }
     const groups = regionCountries(region).map(g => {
       const cards = g.ids.map(id => this.countryCardHtml(id, { legal: targets.has(id), verb, changed: changed.has(id), byId })).join("");
       const sea = g.group && counts?.get(SE_ASIA.slot);
-      return `${g.group ? `<div class="play-label">${escapeHtml(regionName(g.group))}${sea ? ` ${this.countsHtml(sea.us, sea.ussr)}` : ""}</div>` : ""}<div class="ccards">${cards}</div>`;
+      return `${g.group ? `<div class="play-label">${escapeHtml(regionName(g.group))}${sea ? ` ${this.countsHtml(sea.us, sea.ussr)}` : ""} <span class="play-dim">${this.valuesHtml(SE_ASIA.slot)}</span></div>` : ""}<div class="ccards">${cards}</div>`;
     }).join("");
     return head + groups;
   }
@@ -1340,6 +1380,8 @@ class PlayApp {
       if (el.closest("[data-notify]")) return void this.enableNotifications();
       if (el.closest("[data-close-sheet]")) return this.closeSheet();
       if (el.closest("[data-space]")) return this.showSpace();
+      const effect = el.closest<HTMLElement>("[data-effect]");
+      if (effect) return this.showEffect(effect.dataset.effect!);
       const happened = el.closest<HTMLElement>("[data-dismiss-happened]");
       if (happened) {
         this.happenedMemo = happened.dataset.dismissHappened!;

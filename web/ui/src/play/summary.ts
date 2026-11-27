@@ -164,6 +164,32 @@ export const SCORING_CARDS: ReadonlyMap<number, number> = (() => {
   return m;
 })();
 
+/** What a region's scoring awards: each standing's VP ("wins" where Control ends the game), +1 per
+ *  battleground, and whether a country next to the enemy superpower adds 1. */
+export interface ScoringValues {
+  presence: number;
+  domination: number;
+  control: number | "wins";
+  adjacent: boolean;
+}
+
+/** Each scoring slot's values (Southeast Asia's apart: it has no standings), read from the scoring
+ *  card's own text -- "Presence: 3; Domination: 7; Control: 9; ... adjacent to enemy superpower".
+ *  tests/web/js/play_summary.ts holds them to what the engine awards. */
+export const SCORING_VALUES: ReadonlyMap<number, ScoringValues> = (() => {
+  const m = new Map<number, ScoringValues>();
+  for (const [slot, id] of SCORING_CARDS) {
+    const text = CARDS_METADATA.find(c => c.id === id)?.description ?? "";
+    const v = /Presence: (\d+); Domination: (\d+); Control: (\d+|Automatic Victory)/.exec(text);
+    if (!v) continue;
+    m.set(slot, {
+      presence: Number(v[1]), domination: Number(v[2]), control: v[3] === "Automatic Victory" ? "wins" : Number(v[3]),
+      adjacent: text.includes("adjacent to enemy superpower"),
+    });
+  }
+  return m;
+})();
+
 export type CardWhere = "hand" | "discard" | "removed" | "out" | "unseen";
 
 /** Where `card` is as `shown` (a player's view) lets its player know: the player's own hand, the
