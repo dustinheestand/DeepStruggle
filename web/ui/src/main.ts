@@ -37,7 +37,7 @@ import { loadStoredGame, storeGame } from "./game/saved_game";
 import { SEATS, sideRules } from "./game/seats";
 import { ResultDialog } from "./result_dialog";
 import { BUILD_COMMIT, BUILD_DIRTY, PLAY_ENDPOINT } from "./build_info";
-import { OnlineGame, createRoom, roomSocketUrl, seatLink, webSocketConnect } from "./game/online";
+import { OnlineGame, createRoomAsking, roomSocketUrl, seatLink, webSocketConnect } from "./game/online";
 import { Seat, otherSeat } from "./game/online_protocol";
 import { applyWireSteps, sessionSteps, startOnlineGame } from "./game/online_session";
 import { escapeHtml, num } from "./html";
@@ -1610,7 +1610,13 @@ export class TSApp {
     buttons.forEach(b => { b.disabled = true; });
     if (note) note.textContent = t("app:online.creating");
     try {
-      const r = await createRoom(PLAY_ENDPOINT, this.engine.fingerprint);
+      const r = await createRoomAsking(PLAY_ENDPOINT, this.engine.fingerprint,
+        refused => window.prompt(refused ? t("app:online.passwordWrong") : t("app:online.passwordAsk")));
+      if (!r) {
+        buttons.forEach(b => { b.disabled = false; });
+        this.renderModeNote();
+        return;
+      }
       window.location.assign(seatLink(window.location.href, r.room, r.seats[side], r.seats[otherSeat(side)]));
     } catch (e) {
       buttons.forEach(b => { b.disabled = false; });

@@ -7,7 +7,9 @@ and the dice come from the seed through the engine's PRNG, so the relay only pas
 It never runs the engine. This Cloudflare Worker keeps one Durable Object per game, which holds that
 list and pushes each new step to both pages over a WebSocket.
 
-* `POST /rooms` `{engine}` → `{room, seed, seats: {US, USSR}}`: a new game. Each seat's secret is
+* `POST /rooms` `{engine, password}` → `{room, seed, seats: {US, USSR}}`: a new game. When the secret
+  `CREATE_PASSWORD` is set, a request without it is refused (HTTP 401); the pages ask for it once
+  and remember it. Each seat's secret is
   that player's link (`?room=<room>&seat=<secret>`). The maker's own link also carries
   `&invite=<the other secret>`, so the maker's page can show the invite again.
 * `GET /rooms/<room>/ws?seat=<secret>`: the live game (`web/ui/src/game/online_protocol.ts`). On
@@ -17,8 +19,10 @@ list and pushes each new step to both pages over a WebSocket.
   (`web/ui/src/game/online.ts`).
 * `GET /rooms/<room>?seat=<secret>`: the game so far as JSON (seed, steps, `abandoned`), for a
   script or the phone page's list of games.
-* `POST /rooms/<room>/abandon?seat=<secret>`: give the game up. The relay refuses further moves, sends
-  no more pushes, and tells both pages (`abandoned`); the steps stay.
+* `POST /rooms/<room>/abandon?seat=<secret>` `{forfeit?}`: give the game up. The relay refuses
+  further moves and tells both pages (`abandoned`); the steps stay. Abandoned, both lists drop it
+  and no more pushes go out; resigned (`forfeit: true`), the other side has won, and its phones
+  are told so.
 * `POST /rooms/<room>/push?seat=<secret>` `{subscription, url}`: notify this phone when it is the
   seat's move (at most 4 phones a seat), and `GET /push-key`: the VAPID public key to subscribe with.
   A `move` may carry `next: {side, note}`. When `side` is the other seat and that seat is not
@@ -51,6 +55,9 @@ npm install
 npx wrangler login
 npx wrangler deploy          # prints the Worker's URL: https://ts-play-relay.<subdomain>.workers.dev
 ```
+
+To keep strangers from making games, set a password: `npx wrangler secret put CREATE_PASSWORD`
+(locally, `CREATE_PASSWORD=...` in `.dev.vars`, which git ignores). Without it anyone may.
 
 For turn notifications, make a VAPID key pair (P-256): put its public key (uncompressed point,
 base64url) in `wrangler.toml` as `VAPID_PUBLIC`, and its private JWK in the secret:

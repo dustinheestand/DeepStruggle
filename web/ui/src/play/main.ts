@@ -26,21 +26,22 @@ import { GameState, MicroAction, RegionScores, RegionalStatus } from "../types";
 import { ActionHud } from "../action_hud";
 import { redactState } from "../game/view";
 import { lastTurnOf } from "../game/last_turn";
-import { OnlineGame, abandonRoom, createRoom, fetchRoom, pushKey, roomSocketUrl, seatLink, subscribeSeat, webSocketConnect } from "../game/online";
+import { OnlineGame, abandonRoom, createRoomAsking, fetchRoom, pushKey, roomSocketUrl, seatLink, subscribeSeat, webSocketConnect } from "../game/online";
 import { RoomSnapshot, Seat, otherSeat } from "../game/online_protocol";
 import { applyWireSteps, sessionSteps, startOnlineGame } from "../game/online_session";
 import { PLAY_ENDPOINT } from "../build_info";
 import { CARDS_METADATA, MAP_METADATA } from "../metadata";
 import { escapeHtml } from "../html";
-import { lineHtml, messageHtml } from "../game/log";
+import { LogLine, isCardArg, isCountryArg, lineHtml, messageHtml, param, strParam } from "../game/log";
 import { groupLog } from "../game/log_view";
 import { effectNameMessage } from "../cards_view";
 import { spaceRaceBoxes } from "../tracks_view";
 import { SHORT_NAMES } from "../map_view";
+import { ABBR, CARD_H, CARD_W, MAP_W, SP_H, SP_W, regionMap } from "./region_map";
 import { cardDescription, cardName, countryName, initLanguage, regionName, renderEnglish, sideName, t } from "../i18n";
 import {
-  Count, HistoryEntry, countriesById, REGIONS, SCORING_CARDS, SE_ASIA, Upshot, cardWhere, countText, history, regionCountries,
-  regionCounts, revealed, spaceAbilities,
+  Count, HistoryEntry, countriesById, REGIONS, SCORING_CARDS, SE_ASIA, Upshot, cardWhere, countText, history, notableLines,
+  regionCountries, regionCounts, revealed, spaceAbilities,
 } from "./summary";
 
 type Tab = "board" | "hand" | "history";
@@ -112,6 +113,10 @@ class PlayApp {
   private boardDirty = true;
   private collapsed = false;
   private baseTitle = document.title;
+  /** A region as a grid of cards or as a map (region_map.ts); this device's choice. */
+  private regionView: "cards" | "map" = (() => {
+    try { return localStorage.getItem("ts.play.regionView") === "cards" ? "cards" : "map"; } catch { return "map"; }
+  })();
 
   async boot() {
     const p = new URLSearchParams(location.search);
@@ -189,7 +194,12 @@ class PlayApp {
       }
       b.disabled = true;
       try {
-        const r = await createRoom(PLAY_ENDPOINT, this.engine.fingerprint);
+        const r = await createRoomAsking(PLAY_ENDPOINT, this.engine.fingerprint,
+          refused => window.prompt(refused ? t("app:online.passwordWrong") : t("app:online.passwordAsk")));
+        if (!r) {
+          b.disabled = false;
+          return;
+        }
         const side = what as Seat;
         location.assign(seatLink(location.href, r.room, r.seats[side], r.seats[otherSeat(side)]));
       } catch (e) {
@@ -234,7 +244,7 @@ class PlayApp {
       try {
         const seat = new URL(g.url).searchParams.get("seat") || "";
         const snap = await fetchRoom(PLAY_ENDPOINT, g.room, seat);
-        if (snap.abandoned) {
+        if (snap.abandoned && !snap.abandoned.forfeit) {
           forgetGame(g.room);
           item.remove();
           this.toast(t("app:play.wasAbandoned", { side: sideName(snap.abandoned.by) }));
@@ -270,6 +280,11 @@ class PlayApp {
     const s = e.display();
     const vp = s.victory_points;
     const vpText = vp === 0 ? `VP ${t("app:play.vpEven")}` : `<span class="${vp > 0 ? "us" : "ussr"}">VP ${Math.abs(vp)} ${sideName(vp > 0 ? "US" : "USSR")}</span>`;
+    if (snap.abandoned?.forfeit) {
+      const winner = otherSeat(snap.abandoned.by);
+      return { html: t("app:play.gameResigned", { side: `<span class="${sideCls(winner)}">${sideName(winner)}</span>`, loser: sideName(snap.abandoned.by), turn: s.turn }),
+        mine: false, over: true };
+    }
     if (s.is_terminal) {
       const u = e.terminalUtility();
       const winner = u > 0 ? "US" : u < 0 ? "USSR" : "";
@@ -325,8 +340,11 @@ class PlayApp {
       // Presence and the connection redraw the status line only: a redraw of the board under a
       // finger would swallow the tap.
       changed: () => {
-        if (this.full && !this.boardDirty) this.renderStatus();
+        // A game abandoned or resigned changes the bar and the tabs too.
+        const ended = !!this.online?.abandoned;
+        if (this.full && !this.boardDirty && ended === this.ended) this.renderStatus();
         else this.update(false);
+        this.ended = ended;
       },
       pushable: () => this.committed,
       next: () => this.nextToMove(),
@@ -362,6 +380,9 @@ class PlayApp {
     const mine = [...entries].reverse().find(e => e.player === me);
     return { side: d, note: mine ? renderEnglish(mine.title) : "" };
   }
+
+  /** The relay had said the game was abandoned or resigned, when the page last drew it. */
+  private ended = false;
 
   /** Until when the other player's last tap shows. */
   private activeUntil = 0;
@@ -463,12 +484,17 @@ class PlayApp {
       this.toast(why);
       return;
     }
-    if (this.online) {
+    const chance = () => {
       const tag = this.session.tags[this.session.tags.length - 1];
       const shows = revealed(before, redactState(this.session.state(), side).card_locations);
-      if (tag?.rolled || shows) {
+      const facts = this.stepFacts();
+      return { facts, rolled: !!tag?.rolled, random: !!tag?.rolled || shows || facts.some(l => l.mark === "✂") };
+    };
+    let outcome = chance();
+    if (this.online) {
+      if (outcome.random) {
         this.session.undo(false);   // nothing of it was drawn
-        const what = tag?.rolled ? t("app:play.revealsDie") : t("app:play.revealsCards");
+        const what = outcome.rolled ? t("app:play.revealsDie") : t("app:play.revealsCards");
         if (!window.confirm(t("app:play.confirmReveal", { what, step: this.stepWords(a) }))) {
           this.update(false);
           return;
@@ -479,9 +505,27 @@ class PlayApp {
           return;
         }
         this.committed = this.session.steps.length;
+        outcome = chance();
       }
     }
     this.update();
+    if (outcome.random && outcome.facts.length) this.showOutcome(outcome.facts);
+  }
+
+  /** What the step just taken did that was not up to the player, as its player may read it: the
+   *  dice, a random discard, a card revealed or taken (`notableLines` of that step). */
+  private stepFacts(): LogLine[] {
+    const last = this.session.steps[this.session.steps.length - 1];
+    if (!last) return [];
+    const logs = redactState(this.session.state(), this.viewSide).action_logs || [];
+    return groupLog(logs).flatMap(e => notableLines(e, last.step_index));
+  }
+
+  /** The outcome of a step of chance, until dismissed. */
+  private showOutcome(facts: LogLine[]) {
+    this.sheet(`<h2>${t("app:play.outcomeTitle")}</h2>
+      <div class="facts facts-big">${facts.map(l => `<div>${this.factHtml(l)}</div>`).join("")}</div>
+      <button class="btn btn-primary btn-big" data-close-sheet>${t("app:play.ok")}</button>`);
   }
 
   /** A step in a few words, for its confirmation. */
@@ -540,6 +584,7 @@ class PlayApp {
     // Your decision, placing on the map: the board is where it is made.
     if (mine && !this.wasMine && this.isPointDecision()) this.tab = "board";
     if (mine && !this.wasMine && this.online && this.session.steps.length > 0) navigator.vibrate?.(60);
+    if (mine && !this.wasMine) this.collapsed = false;
     this.wasMine = mine;
     this.renderTracks();
     this.renderStatus();
@@ -599,7 +644,9 @@ class PlayApp {
         parts.push(`<span class="presence presence-${p}" title="${escapeHtml(t(`app:play.presenceTitle.${p}`))}"></span>${word}`);
         if (Date.now() < this.activeUntil && p !== "offline") parts.push(`<span class="pulse">${t("app:play.active", { side: sideName(them) })}</span>`);
       }
-      if (g.abandoned) parts.push(`<b>${t("app:play.abandonedBy", { side: sideName(g.abandoned.by) })}</b>`);
+      if (g.abandoned?.forfeit) {
+        parts.push(`<b>${t("app:play.resignedBy", { side: sideName(g.abandoned.by), winner: `<span class="${sideCls(otherSeat(g.abandoned.by))}">${sideName(otherSeat(g.abandoned.by))}</span>` })}</b>`);
+      } else if (g.abandoned) parts.push(`<b>${t("app:play.abandonedBy", { side: sideName(g.abandoned.by) })}</b>`);
       else if (this.full && g.side && g.seed !== null) {
         if (this.full.is_terminal) parts.push(t("app:online.over"));
         else {
@@ -621,9 +668,16 @@ class PlayApp {
     document.title = mine && !this.practice ? `● ${this.baseTitle}` : this.baseTitle;
   }
 
+  /** The game is over: played to its end, or resigned. */
+  private get over(): boolean {
+    return !!this.full?.is_terminal || !!this.online?.abandoned?.forfeit;
+  }
+
   private renderTabs() {
+    const resign = document.querySelector<HTMLElement>("[data-resign]");
+    if (resign) resign.hidden = !this.online?.side || this.online.seed === null || !!this.online.abandoned || !!this.full?.is_terminal;
     const handCount = this.shown?.hands?.[this.viewSide]?.length ?? 0;
-    document.querySelectorAll<HTMLButtonElement>("button.play-tab").forEach(b => {
+    document.querySelectorAll<HTMLButtonElement>("button.play-tab[data-tab]").forEach(b => {
       b.classList.toggle("active", b.dataset.tab === this.tab);
       if (b.dataset.tab === "hand") b.textContent = `${t("app:play.tabHand")} (${handCount})`;
       if (b.dataset.tab === "board") b.textContent = t("app:play.tabBoard");
@@ -786,19 +840,66 @@ class PlayApp {
       : s.decision_context.resolving_card ? t("app:play.choose") : "+1";
     const changed = new Map((s.last_turn?.countries || []).map(x => [x.id, x]));
     const byId = countriesById(s);
-    const groups = regionCountries(region).map(g => {
-      const cards = g.ids.map(id => this.countryCardHtml(id, { legal: targets.has(id), verb, changed: changed.has(id), byId })).join("");
-      const sea = g.group && counts?.get(SE_ASIA.slot);
-      return `${g.group ? `<div class="play-label">${escapeHtml(regionName(g.group))}${sea ? ` ${this.countsHtml(sea.us, sea.ussr)}` : ""}</div>` : ""}<div class="ccards">${cards}</div>`;
-    }).join("");
-    return `<div class="region-head">
+    const toggle = `<div class="view-toggle" role="group">
+        <button class="${this.regionView === "cards" ? "on" : ""}" data-region-view="cards">${t("app:play.viewCards")}</button>
+        <button class="${this.regionView === "map" ? "on" : ""}" data-region-view="map">${t("app:play.viewMap")}</button>
+      </div>`;
+    const head = `<div class="region-head">
         <button class="btn btn-secondary" data-back>←</button>
         <span class="region-name">${escapeHtml(regionName(region))}</span>
         ${c ? `<span class="tile-counts">${this.countsHtml(c.us, c.ussr)}</span>` : ""}
         <span class="tile-net">${this.netHtml(slot)}</span>
       </div>
-      <div class="tile-line">${this.standingHtml(slot)} · ${t("app:play.scoringCard")} ${this.whereHtml(slot)}</div>
-      ${groups}`;
+      <div class="tile-line">${this.standingHtml(slot)} · ${t("app:play.scoringCard")} ${this.whereHtml(slot)} ${toggle}</div>`;
+    if (this.regionView === "map") {
+      const sea = region === "Asia" ? counts?.get(SE_ASIA.slot) : undefined;
+      const seaLine = sea ? `<div class="tile-line"><span class="sea-key"></span>${escapeHtml(regionName(SE_ASIA.name))} ${this.countsHtml(sea.us, sea.ussr)} ${this.netHtml(SE_ASIA.slot)} ${this.whereHtml(SE_ASIA.slot)}</div>` : "";
+      return head + seaLine + this.regionMapHtml(region, targets, verb, new Set(changed.keys()), byId);
+    }
+    const groups = regionCountries(region).map(g => {
+      const cards = g.ids.map(id => this.countryCardHtml(id, { legal: targets.has(id), verb, changed: changed.has(id), byId })).join("");
+      const sea = g.group && counts?.get(SE_ASIA.slot);
+      return `${g.group ? `<div class="play-label">${escapeHtml(regionName(g.group))}${sea ? ` ${this.countsHtml(sea.us, sea.ussr)}` : ""}</div>` : ""}<div class="ccards">${cards}</div>`;
+    }).join("");
+    return head + groups;
+  }
+
+  /** The region as a map (region_map.ts): tiny cards where the map puts them, neighbours joined by
+   *  lines, and each card's neighbours abroad as a tag. Taps work as on the grid's cards. */
+  private regionMapHtml(region: string, targets: Set<number>, verb: string, changed: Set<number>, byId: ReturnType<typeof countriesById>): string {
+    const m = regionMap(region);
+    const at = new Map(m.spots.map(p => [p.id, p]));
+    // Southeast Asia, tinted: each of its cards' boxes, widened, drawn as one shape.
+    const seaIds = new Set(MAP_METADATA.countries.filter(c => (c.subregions || []).includes(SE_ASIA.name)).map(c => c.id));
+    const pad = 7;
+    const tint = m.spots.filter(p => seaIds.has(p.id))
+      .map(p => `<rect x="${p.x - pad}" y="${p.y - pad}" width="${CARD_W + 2 * pad}" height="${CARD_H + 2 * pad}" rx="10"/>`).join("");
+    const lines = m.links.map(([a, b]) => {
+      const p = at.get(a)!, q = at.get(b)!;
+      return `<line x1="${p.x + CARD_W / 2}" y1="${p.y + CARD_H / 2}" x2="${q.x + CARD_W / 2}" y2="${q.y + CARD_H / 2}"/>`;
+    }).join("") + m.superpowers.flatMap(sp => sp.ids.map(id => {
+      const q = at.get(id)!;
+      return `<line class="sp-link sp-${sideCls(sp.side)}" x1="${sp.x + SP_W / 2}" y1="${sp.y + SP_H / 2}" x2="${q.x + CARD_W / 2}" y2="${q.y + CARD_H / 2}"/>`;
+    })).join("");
+    const powers = m.superpowers.map(sp =>
+      `<span class="sp-node sp-${sideCls(sp.side)}" style="left:${sp.x}px;top:${sp.y}px">${escapeHtml(sideName(sp.side))}</span>`).join("");
+    const cards = m.spots.map(p => {
+      const meta = COUNTRY.get(p.id)!;
+      const n = byId.get(p.id);
+      const us = n?.us_influence ?? 0, ussr = n?.ussr_influence ?? 0;
+      const ctl = n?.controlled_by ?? "NONE";
+      const legal = targets.has(p.id);
+      const tag = legal ? "button" : "div";
+      const away = m.away.get(p.id);
+      const full = escapeHtml(countryName(p.id, meta.name));
+      return `<${tag} class="mcard ${legal ? "mcard-legal" : ""} ${meta.battleground ? "mcard-bg" : ""}" style="left:${p.x}px;top:${p.y}px" title="${legal ? `${escapeHtml(verb)}: ` : ""}${full}" data-info="${p.id}"${legal ? ` data-target="${p.id}"` : ""}>
+        <span class="mc-head"><span class="mc-name">${escapeHtml(ABBR[meta.name] ?? meta.name)}</span>${changed.has(p.id) ? `<span class="mc-moved">●</span>` : ""}<span class="mc-stab">${meta.stability}</span></span>
+        <span class="mc-row"><span class="inf us ${ctl === "US" ? "ctl" : ""}">${us || ""}</span><span class="inf ussr ${ctl === "USSR" ? "ctl" : ""}">${ussr || ""}</span></span>
+        ${away ? `<span class="mc-away">→${escapeHtml(away.join(", "))}</span>` : ""}
+      </${tag}>`;
+    }).join("");
+    return `<div class="rmap" style="width:${MAP_W}px;height:${m.height + 14}px">
+      <svg class="rmap-links" width="${MAP_W}" height="${m.height}">${tint ? `<g class="sea-tint">${tint}</g>` : ""}${lines}</svg>${powers}${cards}</div>`;
   }
 
   // ---- hand -----------------------------------------------------------------------------------
@@ -887,8 +988,95 @@ class PlayApp {
         <span class="entry-title">${messageHtml(e.title)}</span>
         ${pending ? `<span class="chip">${t("app:play.notSent")}</span>` : ""}</div>
       ${this.upshotHtml(h.upshot)}
-      ${open ? `<div class="entry-lines">${e.lines.map(l => `<div>${lineHtml(l)}</div>`).join("")}</div>` : ""}
+      ${open ? `<div class="entry-lines">${e.lines.map(l => `<div>${lineHtml(l)}</div>`).join("")}</div>` : this.factsHtml(e)}
     </div>`;
+  }
+
+  /** A play's dice, random discards and cards moved, under its upshot (`notableLines`). */
+  private factsHtml(e: HistoryEntry["entry"]): string {
+    const lines = notableLines(e);
+    return lines.length ? `<div class="facts">${lines.map(l => `<div>${this.factHtml(l)}</div>`).join("")}</div>` : "";
+  }
+
+  /** A line of `notableLines`: a die in short, anything else as the log words it. */
+  private factHtml(l: LogLine): string {
+    return (l.mark === "🎲" && this.rollHtml(l)) || lineHtml(l);
+  }
+
+  /**
+   * A die line in short, each side in its colour: "🎲 Coup Iran: USSR 4+3 = 7 vs 4 → success, +3".
+   * Read from the log line's parameters (game/describe.ts describeRoll); "" for one it does not know.
+   */
+  private rollHtml(l: LogLine): string {
+    const m = l.msg;
+    const p = (k: string) => param(m, k);
+    const n = (k: string) => Number(p(k) ?? 0);
+    const side = (s: string) => `<span class="${sideCls(s)}">${escapeHtml(sideName(s))}</span>`;
+    const sideOf = (k: string) => side(strParam(m, k));
+    const dice = (roll: number, mod: number, total: number) =>
+      `<b>${roll}</b>${mod ? `${mod > 0 ? "+" : "−"}${Math.abs(mod)} = ${total}` : ""}`;
+    const country = () => {
+      const c = p("country");
+      return isCountryArg(c) ? escapeHtml(countryName(c.country, c.name)) : escapeHtml(String(c ?? ""));
+    };
+    const card = () => {
+      const c = p("card");
+      return isCardArg(c) ? `<span class="log-card" data-card-id="${c.card}">${escapeHtml(cardName(c.card, c.name))}</span>` : escapeHtml(String(c ?? ""));
+    };
+    const result = p("result");
+    const rk = typeof result === "object" && result !== null && "key" in result ? result : null;
+    const rn = (k: string) => (rk ? Number(param(rk, k) ?? 0) : 0);
+    const won = (s: string) => `<span class="${sideCls(s)}">${t("app:play.roll.wins", { side: escapeHtml(sideName(s)) })}</span>`;
+    const ok = (good: boolean, text: string) => `<span class="${good ? "roll-ok" : "roll-no"}">${text}</span>`;
+    let words = "";
+    switch (m.key) {
+      case "log:roll.coup":
+      case "log:roll.coupWithCard": {
+        const res = rk?.key === "log:roll.coupSucceeded" ? ok(true, t("app:play.roll.coupNet", { net: rn("net") })) : ok(false, t("app:play.roll.failed"));
+        words = t("app:play.roll.coup", { country: country(), side: sideOf("roller"), dice: dice(n("roll"), n("mod"), n("total")), defense: n("defense"), result: res });
+        break;
+      }
+      case "log:roll.realign": {
+        const res = rk?.key === "log:roll.realignUs" ? `${won("US")}, ${t("app:play.roll.removes", { n: rn("net"), side: escapeHtml(sideName("USSR")) })}`
+          : rk?.key === "log:roll.realignUssr" ? `${won("USSR")}, ${t("app:play.roll.removes", { n: rn("net"), side: escapeHtml(sideName("US")) })}`
+          : t("app:play.roll.tie");
+        words = t("app:play.roll.realign", { country: country(),
+          us: `${side("US")} ${dice(n("usRoll"), n("usMod"), n("usTotal"))}`, ussr: `${side("USSR")} ${dice(n("ussrRoll"), n("ussrMod"), n("ussrTotal"))}`, result: res });
+        break;
+      }
+      case "log:roll.space": {
+        const res = rk?.key === "log:roll.spaceSucceeded" ? ok(true, t("app:play.roll.success")) : ok(false, t("app:play.roll.needed", { n: `≤${rn("threshold")}` }));
+        words = t("app:play.roll.space", { box: n("box"), side: sideOf("roller"), roll: `<b>${n("roll")}</b>`, result: res });
+        break;
+      }
+      case "log:roll.war":
+      case "log:roll.warTargeting": {
+        const res = rk?.key === "log:roll.warSucceeded" ? ok(true, t("app:play.roll.success")) : ok(false, t("app:play.roll.needed", { n: `≥${rn("threshold")}` }));
+        words = t("app:play.roll.war", { card: card(), target: m.key === "log:roll.warTargeting" ? ` → ${country()}` : "", side: sideOf("roller"),
+          dice: dice(n("roll"), n("mod"), n("total")), result: res });
+        break;
+      }
+      case "log:roll.olympics": {
+        const res = rk?.key === "log:roll.olympicsSponsor" ? won(strParam(m, "sponsor")) : rk?.key === "log:roll.olympicsOpponent" ? won(strParam(m, "opponent")) : t("app:play.roll.tie");
+        words = t("app:play.roll.olympics", { sponsor: `${sideOf("sponsor")} ${dice(n("sponsorRoll"), n("sponsorTotal") - n("sponsorRoll"), n("sponsorTotal"))}`,
+          opponent: `${sideOf("opponent")} <b>${n("opponentRoll")}</b>`, result: res });
+        break;
+      }
+      case "log:roll.summit": {
+        const res = rk?.key === "log:roll.summitUs" ? won("US") : rk?.key === "log:roll.summitUssr" ? won("USSR") : t("app:play.roll.tie");
+        words = t("app:play.roll.summit", { us: `${side("US")} ${dice(n("usRoll"), n("usMod"), n("usTotal"))}`,
+          ussr: `${side("USSR")} ${dice(n("ussrRoll"), n("ussrMod"), n("ussrTotal"))}`, result: res });
+        break;
+      }
+      case "log:roll.trap": {
+        const res = rk?.key === "log:roll.trapSucceeded" ? ok(true, t("app:play.roll.escaped")) : ok(false, t("app:play.roll.trapped"));
+        words = t("app:play.roll.trap", { side: sideOf("roller"), roll: `<b>${n("roll")}</b>`, result: res });
+        break;
+      }
+      default:
+        return "";
+    }
+    return `🎲 ${words}`;
   }
 
   private historyHtml(): string {
@@ -931,8 +1119,9 @@ class PlayApp {
     }
     const commit = document.getElementById("play-commit")!;
     const pending = this.pending();
+    const over = this.over;
     let html = "";
-    if (s.is_terminal) {
+    if (over) {
       html += `<button class="btn btn-primary" data-download>${t("app:play.download")}</button>`;
     }
     if (this.practice && this.session.canUndo) {
@@ -942,8 +1131,16 @@ class PlayApp {
       if (!mine || s.is_terminal) html += `<button class="btn btn-primary" data-send>${t("app:play.send")}</button>`;
     }
     commit.innerHTML = html;
-    document.getElementById("play-decision")!.classList.toggle("mine", mine && !s.is_terminal);
-    document.getElementById("play-decision")!.classList.toggle("must-send", pending > 0 && (!mine || s.is_terminal));
+    const bar = document.getElementById("play-decision")!;
+    const toggle = document.getElementById("play-collapse")!;
+    const open = mine && !over;
+    toggle.hidden = !open;
+    toggle.textContent = this.collapsed ? t("app:play.showOptions") : t("app:play.hideOptions");
+    bar.classList.toggle("collapsed", open && this.collapsed);
+    bar.classList.toggle("mine", open);
+    bar.classList.toggle("must-send", pending > 0 && (!mine || s.is_terminal));
+    // The other side's move with nothing of yours to send: there is nothing to show down here.
+    bar.classList.toggle("idle", !open && pending === 0 && !over);
   }
 
   // ---- chrome ---------------------------------------------------------------------------------
@@ -1020,7 +1217,7 @@ class PlayApp {
     document.addEventListener("pointercancel", cancel);
     // The long press is ours, not the phone's text-selection or context menu.
     document.addEventListener("contextmenu", e => { if ((e.target as HTMLElement).closest(".ccard")) e.preventDefault(); });
-    document.querySelectorAll<HTMLButtonElement>("button.play-tab").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll<HTMLButtonElement>("button.play-tab[data-tab]").forEach(b => b.addEventListener("click", () => {
       this.tab = b.dataset.tab as Tab;
       if (this.tab !== "board") this.region = null;
       if (this.shown) {
@@ -1053,6 +1250,13 @@ class PlayApp {
         window.scrollTo(0, 0);
         return;
       }
+      const view = el.closest<HTMLElement>("[data-region-view]");
+      if (view) {
+        this.regionView = view.dataset.regionView === "map" ? "map" : "cards";
+        try { localStorage.setItem("ts.play.regionView", this.regionView); } catch { /* no storage */ }
+        this.renderMain();
+        return;
+      }
       if (el.closest("[data-back]")) {
         this.region = null;
         this.renderMain();
@@ -1078,12 +1282,16 @@ class PlayApp {
         return;
       }
       if (el.closest("[data-notify]")) return void this.enableNotifications();
+      if (el.closest("[data-close-sheet]")) return this.closeSheet();
+      if (el.closest("[data-resign]")) return this.askResign();
+      if (el.closest("[data-resign-confirm]")) return void this.resign();
       if (el.closest("[data-undo]")) return this.undo();
       if (el.closest("[data-send]")) return this.send();
       if (el.closest("[data-download]")) return this.download();
-      if (el.closest(".play-decision-head") && !el.closest("button")) {
+      if (el.closest("#play-collapse") || (el.closest(".play-decision-head") && !el.closest("button"))) {
+        if (!this.canMove()) return;
         this.collapsed = !this.collapsed;
-        document.getElementById("play-decision")!.classList.toggle("collapsed", this.collapsed);
+        if (this.shown) this.renderDecision();
       }
     });
   }
@@ -1142,9 +1350,30 @@ class PlayApp {
     });
   }
 
+  /** Resigning: what it does, and the button that does it. */
+  private askResign() {
+    const g = this.online;
+    if (!g?.side || g.abandoned) return;
+    this.sheet(`<h2>${t("app:play.resignTitle")}</h2>
+      <p>${t("app:play.resignText", { side: sideName(otherSeat(g.side)) })}</p>
+      <div class="play-row">
+        <button class="btn btn-danger btn-big" data-resign-confirm>${t("app:play.resign")}</button>
+        <button class="btn btn-secondary btn-big" data-close-sheet>${t("app:play.keepPlaying")}</button>
+      </div>`);
+  }
+
+  private async resign() {
+    this.closeSheet();
+    try {
+      await abandonRoom(PLAY_ENDPOINT, this.room, this.seat, true);
+    } catch (e) {
+      this.toast(t("app:play.resignFailed", { error: e instanceof Error ? e.message : String(e) }), 6000);
+    }
+  }
+
   /** The finished game as a .tslog.json replay (both hands: offered only once it is over). */
   private download() {
-    if (!this.full?.is_terminal) return;
+    if (!this.over) return;
     const url = URL.createObjectURL(new Blob([JSON.stringify(this.session.replay(), null, 1)], { type: "application/json" }));
     const a = document.createElement("a");
     a.href = url;

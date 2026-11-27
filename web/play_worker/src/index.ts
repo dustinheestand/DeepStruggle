@@ -2,17 +2,18 @@
  * The play relay's Worker (README.md): makes rooms and routes each page's connection to its
  * room's Durable Object, which keeps the game's steps and passes them between the two pages.
  *
- *   POST /rooms                      {engine}          -> {room, seed, seats: {US, USSR}}
+ *   POST /rooms                      {engine, password} -> {room, seed, seats: {US, USSR}}
  *   GET  /rooms/<room>?seat=<secret>                   -> the game so far (RoomSnapshot)
  *   GET  /rooms/<room>/ws?seat=<secret>  (WebSocket)   -> the live game (online_protocol.ts)
  *   POST /rooms/<room>/push?seat=<secret> {subscription, url} -> tell this phone when it is the seat's move
- *   POST /rooms/<room>/abandon?seat=<secret>           -> give the game up (both lists drop it)
+ *   POST /rooms/<room>/abandon?seat=<secret> {forfeit?} -> give the game up: abandon it (both lists
+ *                                                         drop it) or resign it (the other side wins)
  *   GET  /push-key                                     -> the VAPID public key to subscribe with
  *   GET  /health
  */
 import { DurableObject } from "cloudflare:workers";
 import {
-  CreateRoomResponse, NextToMove, PushKeyResponse, PushPayload, SEAT_NAMES, Seat, ServerMessage, SubscribeRequest,
+  AbandonRequest, CreateRoomRequest, CreateRoomResponse, NextToMove, PushKeyResponse, PushPayload, SEAT_NAMES, Seat, ServerMessage, SubscribeRequest,
 } from "../../ui/src/game/online_protocol";
 import {
   RoomData, addPushTarget, applyMove, onlineOf, parseClientMessage, presenceOf, removePushTarget, seatOf, snapshot,
@@ -29,6 +30,19 @@ export interface Env {
   VAPID_PUBLIC?: string;
   VAPID_PRIVATE_JWK?: string;
   VAPID_SUBJECT?: string;
+  /** The password for making rooms (a secret): unset, anyone may make one. Joining and playing a
+   *  room need only its seat's link. */
+  CREATE_PASSWORD?: string;
+}
+
+/** `a === b`, in time that does not depend on where they differ. */
+async function sameSecret(a: string, b: string): Promise<boolean> {
+  const enc = new TextEncoder();
+  const [x, y] = await Promise.all([a, b].map(s => crypto.subtle.digest("SHA-256", enc.encode(s))));
+  const u = new Uint8Array(x), v = new Uint8Array(y);
+  let diff = 0;
+  for (let i = 0; i < u.length; i++) diff |= u[i] ^ v[i];
+  return diff === 0;
 }
 
 const ROOM_RE = /^[A-Za-z0-9_-]{16,32}$/;
@@ -87,7 +101,13 @@ export default {
 
     if (url.pathname === "/rooms" && req.method === "POST") {
       if (!origin) return json({ error: "origin not allowed" }, 403, null);
-      const body = await req.json().catch(() => null) as { engine?: unknown } | null;
+      const body = await req.json().catch(() => null) as Partial<Record<keyof CreateRoomRequest, unknown>> | null;
+      if (env.CREATE_PASSWORD) {
+        const given = typeof body?.password === "string" ? body.password : "";
+        if (!(await sameSecret(given, env.CREATE_PASSWORD))) {
+          return json({ error: given ? "wrong password" : "a password is needed to make a game" }, 401, origin);
+        }
+      }
       const engine = typeof body?.engine === "string" ? body.engine.slice(0, 128) : "";
       const room = randomToken(12);
       const seed = crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000;
@@ -120,7 +140,8 @@ export default {
       }
       if (m[2] === "/abandon" && req.method === "POST") {
         if (!origin) return json({ error: "origin not allowed" }, 403, null);
-        const ok = await stub.abandon(seat);
+        const body = await req.json().catch(() => null) as AbandonRequest | null;
+        const ok = await stub.abandon(seat, body?.forfeit === true);
         return ok ? json({ ok: true }, 200, origin) : json({ error: "no such room or seat" }, 404, origin);
       }
       if (!m[2] && req.method === "GET") {
@@ -210,14 +231,18 @@ export class Room extends DurableObject<Env> {
     return true;
   }
 
-  async abandon(secret: string | null): Promise<boolean> {
+  /** Abandon the game, or resign it (`forfeit`): either way no more moves. A resignation is told to
+   *  the other side's phones as well. */
+  async abandon(secret: string | null, forfeit = false): Promise<boolean> {
     const d = await this.load();
     const side = d ? seatOf(d, secret) : null;
     if (!d || !side) return false;
     if (!d.abandoned) {
-      d.abandoned = { by: side, at: new Date().toISOString() };
+      d.abandoned = { by: side, at: new Date().toISOString(), ...(forfeit ? { forfeit: true } : {}) };
       await this.save();
       this.broadcast({ t: "abandoned", ...d.abandoned });
+      const winner = side === "US" ? "USSR" : "US";
+      if (forfeit) await this.tell(d, winner, `${side} resigned -- ${winner} wins`);
     }
     return true;
   }
@@ -310,11 +335,17 @@ export class Room extends DurableObject<Env> {
 
   /** It is `next.side`'s move: tell its phones, unless it has the game in front of it. */
   private async notify(d: RoomData, next: NextToMove): Promise<void> {
+    if (d.abandoned) return;
+    await this.tell(d, next.side, next.note ? `${next.note} -- your move` : "Your move");
+  }
+
+  /** Push `body` to `side`'s phones, unless it has the game in front of it. */
+  private async tell(d: RoomData, side: Seat, body: string): Promise<void> {
     const env = this.env;
-    if (!env.VAPID_PUBLIC || !env.VAPID_PRIVATE_JWK || d.abandoned) return;
-    if (this.seen()[next.side] === "here") return;
-    const targets = d.push?.[next.side] ?? [];
-    console.log(`${next.side} to move: ${targets.length} phone(s) to tell`);
+    if (!env.VAPID_PUBLIC || !env.VAPID_PRIVATE_JWK) return;
+    if (this.seen()[side] === "here") return;
+    const targets = d.push?.[side] ?? [];
+    console.log(`telling ${side}: ${targets.length} phone(s)`);
     if (!targets.length) return;
     const vapid = {
       subject: env.VAPID_SUBJECT || "https://github.com/",
@@ -325,7 +356,7 @@ export class Room extends DurableObject<Env> {
     await Promise.all(targets.map(async t => {
       const payload: PushPayload = {
         title: "Twilight Struggle",
-        body: next.note ? `${next.note} -- your move` : "Your move",
+        body,
         url: t.url,
         tag: d.room,
       };
@@ -333,7 +364,7 @@ export class Room extends DurableObject<Env> {
         const status = await sendPush(t.subscription, payload, vapid);
         console.log(`push to ${new URL(t.subscription.endpoint).host}: HTTP ${status}`);
         if (status === 404 || status === 410) {
-          removePushTarget(d, next.side, t.subscription.endpoint);
+          removePushTarget(d, side, t.subscription.endpoint);
           changed = true;
         }
       } catch (e) {

@@ -14,6 +14,7 @@ import { ActionLogItem, GameState, RegionScores } from "../types";
 import { WasmEngine } from "../engine/wasm_engine";
 import { ReplayStep } from "../replay_controls";
 import { LogEntry, groupLog } from "../game/log_view";
+import { LogLine, cardsIn } from "../game/log";
 import { CARDS_METADATA, MAP_METADATA } from "../metadata";
 import { SpaceBoxMetadata } from "../tracks_view";
 
@@ -128,6 +129,28 @@ export function history(engine: WasmEngine, start: GameState, steps: ReplayStep[
     prev = after;
   });
   return out;
+}
+
+/** Card lines that say nothing a player needs told: a deal, the new era's cards, a reshuffle. */
+const QUIET_CARD_LINES = new Set(["log:card.draws", "log:card.newEra", "log:card.reshuffled"]);
+
+/**
+ * The lines of a play worth showing without opening it -- what was not fixed by the move itself:
+ * every die (🎲), a random discard (✂), Missile Envy's exchange (⇄), a card a choice or an Event
+ * moved (chosen, taken, discarded, removed) and a hand card revealed. The play's own card going
+ * where its play sends it is not news: the heading names it. Influence, VP and DEFCON are the
+ * upshot's. `step`, when given, keeps only the lines that step made.
+ */
+export function notableLines(e: LogEntry, step?: number): LogLine[] {
+  const own = new Set(cardsIn(e.title).map(c => c.card));
+  return e.lines.filter((l, i) => {
+    if (step !== undefined && e.steps[i] !== step) return false;
+    if (l.mark === "🎲" || l.mark === "✂" || l.mark === "⇄") return true;
+    const k = l.msg.key;
+    if (l.mark === "▸" && k.startsWith("log:choice.")) return true;
+    if (k.startsWith("log:card.") && !QUIET_CARD_LINES.has(k)) return !cardsIn(l.msg).some(c => own.has(c.card));
+    return false;
+  });
 }
 
 /** The scoring card of each scoring slot, by the cards' names. */

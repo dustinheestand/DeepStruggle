@@ -46,6 +46,7 @@ web/ui/public/leaderboard.json
 # The stats Worker's local state (wrangler dev's D1) and its local secrets (IP_SALT for wrangler dev).
 web/stats_worker/.wrangler/
 web/play_worker/.wrangler/
+web/play_worker/.dev.vars
 web/stats_worker/.dev.vars
 dist/
 frontend/.vite/

@@ -10,7 +10,9 @@
     "refused": "REFUSED"
   },
   "badPosition": "Could not open the position in the link -- starting a new game instead.\n\n{{error}}",
-  "resume": { "modelUnavailable": "The game stored in this browser was played with a model that cannot be had again, so it cannot be played back as it was played -- opening the position in the link instead.\n\n{{error}}" },
+  "resume": {
+    "modelUnavailable": "The game stored in this browser was played with a model that cannot be had again, so it cannot be played back as it was played -- opening the position in the link instead.\n\n{{error}}"
+  },
   "notReplay": "Not a replay: {{error}}",
   "notYourMove": "it is {{side}}'s move -- the model plays that side in this view",
   "devOnlyTitle": "Shows the full state -- switch to the Developer view to use it",
@@ -68,7 +70,9 @@
     "createFailed": "Could not make the online game: {{error}}",
     "otherEngine": "This game was started on another version of the page (engine {{room}}, yours {{page}}). Reload the page; if this stays, the two of you are on different builds and moves may not agree.",
     "noRelay": "This page was built without a play relay, so it cannot open an online game.",
-    "notYourMove": "it is {{side}}'s move -- your friend plays that side"
+    "notYourMove": "it is {{side}}'s move -- your friend plays that side",
+    "passwordAsk": "The password for making a game:",
+    "passwordWrong": "That password was refused. The password for making a game:"
   },
   "play": {
     "friendTitle": "Play a friend online",
@@ -179,6 +183,37 @@
     "pullRelease": "↑ Release to reload",
     "pullReloading": "Reloading…",
     "connecting": "Connecting to the game…",
-    "workbench": "The full workbench (map, models, analysis)"
+    "workbench": "The full workbench (map, models, analysis)",
+    "gameResigned": "{{side}} won · {{loser}} resigned (T{{turn}})",
+    "resignedBy": "{{side}} resigned · {{winner}} wins",
+    "resignTitle": "Resign this game?",
+    "resignText": "The {{side}} wins. The game ends for both of you, its moves are kept, and you can both download it for analysis.",
+    "resign": "Resign",
+    "keepPlaying": "Keep playing",
+    "resignFailed": "Could not resign: {{error}}",
+    "outcomeTitle": "What happened",
+    "ok": "OK",
+    "hideOptions": "▾ Hide",
+    "showOptions": "▴ Your move: show",
+    "roll": {
+      "coup": "Coup {{country}}: {{side}} {{dice}} vs {{defense}} → {{result}}",
+      "coupNet": "success, +{{net}}",
+      "failed": "failed",
+      "realign": "Realign {{country}}: {{us}} vs {{ussr}} → {{result}}",
+      "removes": "removes {{n}} {{side}}",
+      "tie": "tie",
+      "space": "Space Race (box {{box}}): {{side}} rolls {{roll}} → {{result}}",
+      "success": "success",
+      "needed": "failed (needed {{n}})",
+      "war": "{{card}}{{target}}: {{side}} {{dice}} → {{result}}",
+      "olympics": "Olympics: {{sponsor}} vs {{opponent}} → {{result}}",
+      "summit": "Summit: {{us}} vs {{ussr}} → {{result}}",
+      "trap": "{{side}} escape roll {{roll}} → {{result}}",
+      "escaped": "escaped",
+      "trapped": "still trapped",
+      "wins": "{{side}} wins"
+    },
+    "viewCards": "Cards",
+    "viewMap": "Map"
   }
 }

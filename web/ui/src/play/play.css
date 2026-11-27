@@ -230,7 +230,7 @@ body.play-starting .play-decision { display: none; }
 .card-us { border-left-color: var(--us); }
 .card-ussr { border-left-color: var(--ussr); }
 .card-neutral { border-left-color: #a3a3a3; }
-.card-playable { border-color: var(--accent); border-left-width: 4px; }
+.card-playable { border-top-color: var(--accent); border-right-color: var(--accent); border-bottom-color: var(--accent); }
 .card-ops {
   flex: none;
   width: 26px;
@@ -264,6 +264,13 @@ body.play-starting .play-decision { display: none; }
 .up-region { white-space: nowrap; }
 .up-defcon { color: var(--accent); }
 .entry-lines { font-size: 13px; color: var(--text-dim); margin-top: 6px; }
+/* A play's dice, random discards and cards moved, shown without opening it. */
+.facts { font-size: 13px; margin-top: 3px; font-variant-numeric: tabular-nums; }
+.facts > div { margin: 2px 0; }
+.facts-big { font-size: 16px; margin: 10px 0 16px; }
+.facts-big > div { margin: 8px 0; }
+.roll-ok { color: #22c55e; font-weight: 600; }
+.roll-no { color: var(--text-dim); font-weight: 600; }
 .entry-lines > div { margin: 2px 0; }
 .log-card { text-decoration: underline dotted; }
 
@@ -281,6 +288,9 @@ body.play-starting .play-decision { display: none; }
 .play-decision-head { display: flex; align-items: center; gap: 8px; min-height: 32px; }
 .play-commit { margin-left: auto; display: flex; gap: 8px; }
 .play-commit .btn { min-height: 36px; padding: 6px 12px; }
+/* The other side's move, nothing to send: no bar at all. */
+.play-decision.idle { display: none; }
+.btn-collapse { min-height: 32px; padding: 4px 10px; font-size: 13px; }
 .play-decision.collapsed .play-decision-body,
 .play-decision.collapsed .play-decision-cards { display: none; }
 .play-decision-cards .cards { margin: 6px 0; }
@@ -440,7 +450,8 @@ body.play-starting .play-decision { display: none; }
 }
 .play-main { overscroll-behavior-y: contain; }
 /* The way back to this device's games, at the end of the tabs. */
-.play-games { flex: 0 0 44px; text-align: center; text-decoration: none; }
+.play-games, .play-resign { flex: 0 0 44px; text-align: center; text-decoration: none; }
+.play-resign[hidden] { display: none; }
 
 /* One region's countries as cards: battlegrounds' names in purple, the controller's box filled, a
    target's whole card a button (outlined, its action tagged in the name row). */
@@ -492,3 +503,55 @@ body.play-starting .play-decision { display: none; }
 .country-inf { display: grid; grid-template-columns: 44px 44px 1fr; gap: 6px; align-items: center; margin: 10px 0 4px; }
 .ccard { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 div.ccard[data-info] { cursor: pointer; }
+
+/* An event's card choice (action_hud.ts cardChoiceButtons): its side's colour on the left, as the hand's. */
+.card-choice { border-left: 4px solid #a3a3a3 !important; }
+.card-choice.side-us { border-left-color: var(--us) !important; }
+.card-choice.side-ussr { border-left-color: var(--ussr) !important; }
+
+/* ---- a region as a map (region_map.ts) ---- */
+.view-toggle { display: inline-flex; margin-left: auto; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; vertical-align: middle; }
+.view-toggle button { font: inherit; font-size: 12px; background: none; color: var(--text-dim); border: 0; padding: 3px 10px; }
+.view-toggle button.on { background: var(--panel-2); color: var(--text); }
+.rmap { position: relative; margin: 10px auto 0; }
+.rmap-links { position: absolute; inset: 0; pointer-events: none; }
+.rmap-links line { stroke: #475569; stroke-width: 1.5; }
+.mcard {
+  position: absolute;
+  width: 50px;
+  height: 34px;
+  box-sizing: border-box;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  padding: 2px 3px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.mcard-bg .mc-name { color: #c4b5fd; }
+.mcard-legal { border: 2px solid var(--accent); padding: 1px 2px; }
+.mc-head { display: flex; align-items: center; gap: 2px; }
+.mc-name { flex: 1; min-width: 0; font-size: 11px; font-weight: 800; line-height: 1.1; white-space: nowrap; }
+.mc-moved { font-size: 7px; color: var(--accent); }
+.mc-stab { flex: none; font-size: 9px; line-height: 1.1; color: var(--text-dim); border: 1px solid var(--border-color); border-radius: 3px; padding: 0 2px; }
+.mc-row { display: flex; gap: 2px; align-items: center; }
+.mc-row .inf { flex: 1; height: 15px; min-width: 0; font-size: 11px; display: flex; align-items: center; justify-content: center; border-radius: 3px; }
+.mc-away { position: absolute; left: 1px; bottom: -12px; font-size: 9px; color: var(--text-dim); white-space: nowrap; }
+.rmap-links line.sp-link { stroke-width: 2; stroke-dasharray: 4 3; }
+.rmap-links line.sp-us { stroke: var(--us); }
+.rmap-links line.sp-ussr { stroke: var(--ussr); }
+.sp-node {
+  position: absolute; width: 44px; height: 20px; box-sizing: border-box;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 800; border-radius: 10px; color: #fff;
+}
+.sp-node.sp-us { background: var(--us-fill); }
+.sp-node.sp-ussr { background: var(--ussr-fill); }
+/* Southeast Asia's countries on Asia's map, and its key in the head. */
+.sea-tint { opacity: 0.16; }
+.sea-tint rect { fill: #f59e0b; }
+.sea-key { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; background: rgba(245, 158, 11, 0.35); }

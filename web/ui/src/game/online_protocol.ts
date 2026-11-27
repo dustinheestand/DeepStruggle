@@ -19,9 +19,17 @@ export type WireStep = [number, number, number, number];
 export const MAX_STEPS = 6000;
 export const MAX_BATCH = 16;
 
-/** POST /rooms: the page making the room says which engine it runs, so the other can check. */
+/** POST /rooms: the page making the room says which engine it runs, so the other can check, and
+ *  gives the relay's password for making rooms (none needed when the relay has none). */
 export interface CreateRoomRequest {
   engine: string;
+  password?: string;
+}
+
+/** POST /rooms/<room>/abandon: `forfeit` resigns the game (the other side wins, and it stays in both
+ *  lists as finished); without it the game is abandoned (both lists drop it). */
+export interface AbandonRequest {
+  forfeit?: boolean;
 }
 
 /** POST /rooms answers with the room and one secret per seat: the link a player opens. */
@@ -42,10 +50,12 @@ export interface RoomSnapshot {
   abandoned?: Abandoned;
 }
 
-/** A game one player gave up on: it leaves both players' lists; its steps are kept. */
+/** A game one player gave up on, its steps kept: abandoned, it leaves both players' lists; resigned
+ *  (`forfeit`), it is over and the other side has won. */
 export interface Abandoned {
   by: Seat;
   at: string;
+  forfeit?: boolean;
 }
 
 /** A seat's presence: its page open in front of its player, open behind something (a background

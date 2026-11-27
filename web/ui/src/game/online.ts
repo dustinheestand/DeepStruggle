@@ -11,7 +11,7 @@
  * The transport is a `Connect` so a test can link two pages without a network.
  */
 import {
-  Abandoned, ClientMessage, CreateRoomRequest, CreateRoomResponse, MAX_BATCH, NextToMove, Presence, PushKeyResponse,
+  AbandonRequest, Abandoned, ClientMessage, CreateRoomRequest, CreateRoomResponse, MAX_BATCH, NextToMove, Presence, PushKeyResponse,
   RoomSnapshot, Seat, ServerMessage, SubscribeRequest, WireStep, sameSteps,
 } from "./online_protocol";
 
@@ -212,7 +212,7 @@ export class OnlineGame {
       return;
     }
     if (m.t === "abandoned") {
-      this.abandoned = { by: m.by, at: m.at };
+      this.abandoned = { by: m.by, at: m.at, ...(m.forfeit ? { forfeit: true } : {}) };
       this.host.changed();
       return;
     }
@@ -322,16 +322,45 @@ export function roomSnapshotUrl(endpoint: string, room: string, seat: string): s
   return `${endpoint.replace(/\/+$/, "")}/rooms/${encodeURIComponent(room)}?seat=${encodeURIComponent(seat)}`;
 }
 
-export async function createRoom(endpoint: string, engine: string): Promise<CreateRoomResponse> {
-  const body: CreateRoomRequest = { engine };
+/** The relay refused the password for making rooms (HTTP 401). */
+export class WrongPassword extends Error {}
+
+export async function createRoom(endpoint: string, engine: string, password?: string): Promise<CreateRoomResponse> {
+  const body: CreateRoomRequest = { engine, ...(password ? { password } : {}) };
   const res = await fetch(`${endpoint.replace(/\/+$/, "")}/rooms`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   const reply = await res.json().catch(() => ({}));
+  if (res.status === 401) throw new WrongPassword((reply as { error?: string }).error ?? "wrong password");
   if (!res.ok) throw new Error((reply as { error?: string }).error ?? `HTTP ${res.status}`);
   return reply as CreateRoomResponse;
+}
+
+const PASSWORD_KEY = "ts.play.password";
+
+/**
+ * Make a room, asking for the relay's password when it wants one: the password this browser last
+ * used first, then the player's answer (remembered once it works). Null if the player gives up.
+ * `ask` is the prompt, given whether the last password was refused.
+ */
+export async function createRoomAsking(endpoint: string, engine: string, ask: (refused: boolean) => string | null): Promise<CreateRoomResponse | null> {
+  let password: string | undefined;
+  try { password = localStorage.getItem(PASSWORD_KEY) ?? undefined; } catch { /* no storage */ }
+  for (let refused = false; ; refused = true) {
+    try {
+      const r = await createRoom(endpoint, engine, password);
+      try { if (password) localStorage.setItem(PASSWORD_KEY, password); } catch { /* no storage */ }
+      return r;
+    } catch (e) {
+      if (!(e instanceof WrongPassword)) throw e;
+      try { localStorage.removeItem(PASSWORD_KEY); } catch { /* no storage */ }
+      const answer = ask(refused || password !== undefined);
+      if (answer === null) return null;
+      password = answer.trim();
+    }
+  }
 }
 
 /** The page's address for a seat of a room; `invite` (the maker's own link only) keeps the other seat's. */
@@ -369,8 +398,14 @@ export async function fetchRoom(endpoint: string, room: string, seat: string): P
   return (await res.json()) as RoomSnapshot;
 }
 
-/** Give a game up: both players' lists drop it; the relay keeps its steps. */
-export async function abandonRoom(endpoint: string, room: string, seat: string): Promise<void> {
-  const res = await fetch(`${endpoint.replace(/\/+$/, "")}/rooms/${encodeURIComponent(room)}/abandon?seat=${encodeURIComponent(seat)}`, { method: "POST" });
+/** Give a game up: abandoned, both players' lists drop it; resigned (`forfeit`), the other side wins.
+ *  The relay keeps its steps either way. */
+export async function abandonRoom(endpoint: string, room: string, seat: string, forfeit = false): Promise<void> {
+  const body: AbandonRequest = forfeit ? { forfeit: true } : {};
+  const res = await fetch(`${endpoint.replace(/\/+$/, "")}/rooms/${encodeURIComponent(room)}/abandon?seat=${encodeURIComponent(seat)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }

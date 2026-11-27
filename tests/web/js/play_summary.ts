@@ -2,13 +2,14 @@
 // adds up to the game, under node.
 //   node play_summary.mjs <public dir>
 // A random game in the page's GameSession; its history as the US player reads it. The upshots
-// chained must take the start's region counts and Influence to the end's, entry by entry.
+// chained must take the start's region counts and Influence to the end's, entry by entry, and each
+// play's dice must be among the lines shown without opening it (notableLines).
 import { pathToFileURL } from "node:url";
 import { WasmEngine } from "../../../web/ui/src/engine/wasm_engine";
 import { GameSession } from "../../../web/ui/src/game/session";
 import { redactState } from "../../../web/ui/src/game/view";
 import { startOnlineGame } from "../../../web/ui/src/game/online_session";
-import { countriesById, history, regionCounts, revealed } from "../../../web/ui/src/play/summary";
+import { countriesById, history, notableLines, regionCounts, revealed } from "../../../web/ui/src/play/summary";
 
 const engine = await WasmEngine.load(pathToFileURL(process.argv[2]).href);
 const s = new GameSession(engine);
@@ -56,5 +57,9 @@ const checks = {
   influence_end: [...end.values()].every(c => JSON.stringify(influence.get(c.id)) === JSON.stringify([c.us_influence, c.ussr_influence])),
   vp_end: h.reduce((a, e) => a + e.upshot.vp, 0) === full.victory_points,
   reveals: reveals > 0,
+  // Every die of a play is shown without opening it, and only lines a play's upshot does not tell.
+  facts_dice: h.every(e => e.entry.lines.filter(l => l.mark === "🎲").length === notableLines(e.entry).filter(l => l.mark === "🎲").length),
+  facts_told: h.some(e => notableLines(e.entry).length > 0),
+  facts_no_influence: h.every(e => notableLines(e.entry).every(l => !l.msg.key.startsWith("log:change."))),
 };
 console.log(JSON.stringify({ checks, entries: h.length, turn: full.turn, reveals }));

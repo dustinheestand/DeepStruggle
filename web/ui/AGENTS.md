@@ -39,7 +39,8 @@ web/ui/
 │   │                           # online.ts / online_protocol.ts / online_session.ts (a game
 │   │                           # against a friend through the play relay, web/play_worker/)
 │   ├── play/                   # the phone page (play.html): main.ts (summaries, decision, take-backs),
-│   │                           # summary.ts (region counts, each play's upshot; no DOM), play.css
+│   │                           # summary.ts (region counts, each play's upshot and notable lines;
+│   │                           # no DOM), region_map.ts (a region's map layout; no DOM), play.css
 │   ├── result_dialog.ts        # Game over: the result, how it was played, submit to the stats database
 │   ├── build_info.ts           # the commit the page was built from, the stats endpoint
 │   ├── analysis/               # model.ts (ONNX sources + onnxruntime-web), hf_catalog.ts (the
@@ -631,10 +632,20 @@ web/ui/
      map, and it would crowd the rows.
    - **History**: every play newest first (`groupLog` over the log as your view may read it), each
      with its upshot (`summary.ts history`): `Asia 2-5/2-5 → 3-6/2-5`, the Influence each country
-     gained or lost, VP, DEFCON; a tap shows the play's full lines. The upshots chained take the
-     start to the end exactly (`tests/web/test_play_summary.py`).
+     gained or lost, VP, DEFCON -- and under it what the move did not fix (`notableLines`): every
+     die, in short (`🎲 Coup Iran: USSR 4+3 = 7 vs 4 → success, +3`, `rollHtml`), a random discard
+     (Five Year Plan, Terrorism), Missile Envy's exchange, a card chosen, taken, discarded, removed
+     or revealed -- not the play's own card. A tap shows the play's full lines. The upshots chained
+     take the start to the end exactly, and every die is among the lines shown
+     (`tests/web/test_play_summary.py`).
    - **The decision** is the workbench's HUD (`ActionHud`, every decision type), plus the playable
-     cards when a card is to be chosen (a tap shows its text and *Play*).
+     cards when a card is to be chosen (a tap shows its text and *Play*); every card keeps its
+     side's colour on the left, an Event's card choice too. On your move, *▾ Hide* folds it to one
+     line for the board's room (it opens again at your next move); on the other side's move, with
+     nothing of yours to send, the bar is gone.
+   - **What happened**: after a step of yours that rolled, revealed a card or discarded at random,
+     a sheet shows its `notableLines` until dismissed (`showOutcome`). A random discard counts as a
+     reveal for the take-back rule below.
    - **Take-backs (the owner's rule)**: undo is free until new information is revealed, and the end
      of a move needs confirming. Online, steps stay on the page until sent
      (`OnlineHost.pushable`); *Undo* takes them back. A step that would roll a die or show a card
@@ -657,8 +668,25 @@ web/ui/
      engine (`fetchRoom`, `gameState`), games waiting on you first. *Abandon* (`abandonRoom`) marks
      the room abandoned on the relay: no more moves or pushes, both lists drop it, the game shows
      "Abandoned by …", and its steps stay; a finished game's *Remove* only forgets it here.
-   - **Region view**: the countries as a grid of cards (short names as on the map, `SHORT_NAMES`),
-     the stability and both Influence boxes on each; a target's whole card is the button.
+   - **Resigning**: ⚑ in the tabs (online, the game not over) asks, then `abandonRoom(…, forfeit)`:
+     the relay ends the room as `abandoned.forfeit`, pushes the news to the winner's phones, and
+     both pages show "… resigned · … wins" and offer the download; the game stays in both lists as
+     won, with *Remove*.
+   - **Making a game** may need the relay's password (`CREATE_PASSWORD`): `createRoomAsking`
+     prompts for it and keeps the one that worked in `localStorage` (`ts.play.password`); the
+     workbench's *Play a friend online* does the same. Joining needs only the link.
+   - **Region view**, by default a map (`region_map.ts`; *Cards* / *Map* under the region's name,
+     kept per device in `ts.play.regionView`): each country a small card where `rules/map.json`
+     puts it -- a 2-3 letter code (`ABBR`: DK, BG, BNL, ALG), its stability, both Influence chips --
+     fitted to the page's width (across, a blend of its map position and its rank from the left, so
+     an outlier like Canada does not squeeze the rest), at most `MAX_H` tall before the cards are
+     pushed apart, mostly downwards, until none overlap. Lines join neighbours in the region; a tag
+     under a card names its neighbours abroad (`→ALG`); each superpower is a pill placed where its
+     dashed lines to the countries beside it are shortest without crossing a card or sitting on a
+     neighbour line (Europe's USSR between FI, PL and RO). Southeast Asia is tinted, its counts on a
+     line of their own. The layout depends only on the map, so it is the same on every phone. As
+     *Cards*, the countries are a grid of cards (short names as on the map, `SHORT_NAMES`), the
+     stability and both Influence boxes on each. Either way a target's whole card is the button.
    - **A country's details** (`showCountry`, the sheet): region, stability, Influence, what each side
      needs to control it, the superpower beside it, and its neighbours as cards (a tap opens one's
      own). Neighbours are kept off the board itself (the players know the map); a tap on a card that

@@ -21,6 +21,8 @@
         <button class="play-tab" data-tab="board" role="tab">Board</button>
         <button class="play-tab" data-tab="hand" role="tab">Hand</button>
         <button class="play-tab" data-tab="history" role="tab">History</button>
+        <!-- Resign the game (a sheet asks first); shown during an online game only. -->
+        <button class="play-tab play-resign" data-resign aria-label="Resign" hidden>⚑</button>
         <!-- This device's games (the start screen's list). -->
         <a class="play-tab play-games" href="play.html" aria-label="Your games">☰</a>
       </nav>
@@ -33,6 +35,7 @@
     <section id="play-decision" class="play-decision">
       <div class="play-decision-head">
         <span id="decision-type-badge" class="badge"></span>
+        <button id="play-collapse" class="btn btn-collapse" hidden></button>
         <span id="play-commit" class="play-commit"></span>
       </div>
       <div id="decision-body" class="play-decision-body"></div>
