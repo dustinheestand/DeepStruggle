@@ -233,6 +233,17 @@ export interface SpaceAbility {
 
 /** The privileges in force, by the track (tracks_view.ts spaceRaceBoxes: the engine's boxes, their
  *  privileges' words) -- the rule the workbench's Space Race panel shows. */
+/** The Action Rounds `side` has this turn, as the engine counts them (advance_after_action_round):
+ *  6 in turns 1-3, 7 from turn 4, and from turn 4 an eighth for the side that has earned one --
+ *  North Sea Oil (the US's), or the Space Station's box reached first. */
+export function roundsIn(s: Pick<GameState, "turn" | "flags" | "space">, side: Side): number {
+  if (s.turn <= 3) return 6;
+  const other: Side = side === "US" ? "USSR" : "US";
+  const eighth = (side === "US" && (s.flags || []).includes("NORTH_SEA_OIL_ACTIVE"))
+    || (s.space[side] >= 8 && s.space[other] < 8);
+  return eighth ? 8 : 7;
+}
+
 export function spaceAbilities(space: { US: number; USSR: number }, boxes: SpaceBoxMetadata[]): SpaceAbility[] {
   const out: SpaceAbility[] = [];
   for (const box of boxes) {

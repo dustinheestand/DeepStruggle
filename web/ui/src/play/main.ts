@@ -41,7 +41,7 @@ import { ABBR, CARD_H, CARD_W, MAP_W, SP_H, SP_W, regionMap } from "./region_map
 import { cardDescription, cardName, countryName, initLanguage, regionName, renderEnglish, sideName, t } from "../i18n";
 import {
   Count, HistoryEntry, countriesById, REGIONS, SCORING_CARDS, SE_ASIA, Upshot, cardWhere, countText, history, notableLines,
-  regionCountries, regionCounts, revealed, SCORING_VALUES, spaceAbilities,
+  regionCountries, regionCounts, revealed, roundsIn, SCORING_VALUES, spaceAbilities,
 } from "./summary";
 
 type Tab = "board" | "hand" | "history";
@@ -50,6 +50,12 @@ const CARD = new Map(CARDS_METADATA.map(c => [c.id, c]));
 const COUNTRY = new Map(MAP_METADATA.countries.map(c => [c.id, c]));
 
 const sideCls = (s: string) => (s === "US" ? "us" : s === "USSR" ? "ussr" : "");
+
+/** "AR3/6": the round and how many the phasing side has this turn (roundsIn). */
+function arText(s: GameState): string {
+  const side = s.phasing_player === "US" || s.phasing_player === "USSR" ? s.phasing_player : null;
+  return side ? `AR${s.action_round}/${roundsIn(s, side)}` : `AR${s.action_round}`;
+}
 
 function deciderOf(s: GameState): Seat | null {
   const p = s.decision_context?.decision_player;
@@ -292,7 +298,7 @@ class PlayApp {
       return { html: winner ? t("app:play.gameWon", { side: `<span class="${sideCls(winner)}">${sideName(winner)}</span>`, turn: s.turn })
         : t("app:play.gameDrawn"), mine: false, over: true };
     }
-    const round = s.current_phase_name === "HEADLINE" ? t("app:play.headline") : s.current_phase_name === "SETUP" ? t("app:play.setup") : `AR${s.action_round}`;
+    const round = s.current_phase_name === "HEADLINE" ? t("app:play.headline") : s.current_phase_name === "SETUP" ? t("app:play.setup") : arText(s);
     const d = deciderOf(s);
     const mine = d === snap.side;
     const who = mine ? `<b>${t("app:online.yourMove")}</b>` : d ? t("app:online.theirMove", { side: sideName(d) }) : "";
@@ -607,7 +613,7 @@ class PlayApp {
     const vp = s.victory_points;
     const vpText = vp === 0 ? t("app:play.vpEven") : `${Math.abs(vp)} ${sideName(vp > 0 ? "US" : "USSR")}`;
     const round = s.current_phase_name === "HEADLINE" ? t("app:play.headline")
-      : s.current_phase_name === "SETUP" ? t("app:play.setup") : `AR${s.action_round}`;
+      : s.current_phase_name === "SETUP" ? t("app:play.setup") : arText(s);
     const phasing = s.phasing_player === "US" || s.phasing_player === "USSR" ? s.phasing_player : "";
     const china = s.china_card;
     document.getElementById("play-tracks")!.innerHTML = `

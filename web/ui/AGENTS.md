@@ -620,7 +620,8 @@ web/ui/
     (`index.html`, coarse pointer and at most 820 px wide) is sent here with its query (a room link
     included); `?workbench`, `?replay` and automated browsers (`navigator.webdriver`, the workbench's
     own mobile tests) stay on the workbench, and the start screen links back to it.
-   - **Top strip**: turn and round, DEFCON, VP, Mil Ops, Space Race, China Card; the connection
+   - **Top strip**: turn and round (`AR3/6`: the rounds the phasing side has this turn, `roundsIn` --
+     6 in turns 1-3, 7 after, 8 for a side with North Sea Oil or the Space Station), DEFCON, VP, Mil Ops, Space Race, China Card; the connection
      and whose move it is (the tab title too; a vibration on Android when it becomes yours).
    - **Board**: a tile per region -- each side's `battlegrounds-countries` controlled, as the
      engine's scoring counts them (`regionScores`), US blue / USSR red; the standings, the net if

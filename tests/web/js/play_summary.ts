@@ -10,7 +10,7 @@ import { MAP_METADATA } from "../../../web/ui/src/metadata";
 import { GameSession } from "../../../web/ui/src/game/session";
 import { redactState } from "../../../web/ui/src/game/view";
 import { startOnlineGame } from "../../../web/ui/src/game/online_session";
-import { REGIONS, SCORING_VALUES, countriesById, history, notableLines, regionCounts, revealed } from "../../../web/ui/src/play/summary";
+import { REGIONS, SCORING_VALUES, countriesById, roundsIn, history, notableLines, regionCounts, revealed } from "../../../web/ui/src/play/summary";
 
 const engine = await WasmEngine.load(pathToFileURL(process.argv[2]).href);
 const s = new GameSession(engine);
@@ -18,7 +18,14 @@ let x = 99;
 const rand = (n: number) => { x = (Math.imul(x, 1664525) + 1013904223) >>> 0; return (x >>> 8) % n; };
 startOnlineGame(s, 31337);
 let reveals = 0;
+// The page's "AR3/6": no Action Round the engine plays is past the count it shows.
+let roundsOk = true, roundsSeen = 0;
 for (let n = 0; n < 5000 && !engine.isTerminal(); n++) {
+  const d = engine.display();
+  if (d.current_phase_name === "ACTION_ROUND" && (d.phasing_player === "US" || d.phasing_player === "USSR")) {
+    roundsSeen++;
+    if (d.action_round < 1 || d.action_round > roundsIn(d, d.phasing_player)) roundsOk = false;
+  }
   const legal: number[] = [];
   engine.mask(false).forEach((v, i) => { if (v) legal.push(i); });
   const before = redactState(s.state(), "US").card_locations;
@@ -91,6 +98,7 @@ const checks = {
   vp_end: h.reduce((a, e) => a + e.upshot.vp, 0) === full.victory_points,
   reveals: reveals > 0,
   scoring_values: scoringValuesOk,
+  rounds: roundsOk && roundsSeen > 0,
   // Every die of a play is shown without opening it, and only lines a play's upshot does not tell.
   facts_dice: h.every(e => e.entry.lines.filter(l => l.mark === "🎲").length === notableLines(e.entry).filter(l => l.mark === "🎲").length),
   facts_told: h.some(e => notableLines(e.entry).length > 0),
