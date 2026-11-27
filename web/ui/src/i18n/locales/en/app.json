@@ -214,6 +214,14 @@
       "wins": "{{side}} wins"
     },
     "viewGrid": "Grid",
-    "viewMap": "Map"
+    "viewMap": "Map",
+    "dismiss": "Dismiss",
+    "spaceStart": "Start",
+    "spaceNeeds": "{{ops}}+ Ops card · roll 1–{{roll}}",
+    "spaceVp": "VP {{first}} / {{second}}",
+    "spaceHeld": "{{side}} has it",
+    "spaceCancelled": "both reached: no one has it",
+    "spaceLegend": "VP: for reaching the box first / second. ★ A privilege: the side that reaches its box first has it until the other side reaches it too.",
+    "spaceAttempts": "Attempts this turn:"
   }
 }

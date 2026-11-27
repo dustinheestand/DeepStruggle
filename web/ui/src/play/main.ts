@@ -775,11 +775,51 @@ class PlayApp {
       return `<span class="${sideCls(side)}">${sideName(side)}</span> ${n ? t("tracks:next.text", { ops: n.minOps, roll: n.maxRoll }) : t("tracks:next.done")}${tried ? ` (${t("app:play.spaceTried", { n: tried })})` : ""}`;
     };
     const holder = held[0]?.side;
-    return `<div class="space ${holder ? `space-${sideCls(holder)}` : ""}">
+    return `<div class="space ${holder ? `space-${sideCls(holder)}` : ""}" data-space role="button">
       <div class="space-head"><span class="play-label">${t("app:play.spaceRace")}</span> ${pos("US")} · ${pos("USSR")}</div>
       ${held.map(h => `<span class="space-ability ${sideCls(h.side)}" title="${escapeHtml(h.box.ability)}">${escapeHtml(h.box.abilityShort)}</span>`).join("")}
       <div class="space-next play-dim">${next("US")} · ${next("USSR")}</div>
     </div>`;
+  }
+
+  /**
+   * The whole Space Race track, in the sheet: each box from the first up -- what reaching it takes
+   * (a card of N+ Ops, a roll of 1-M), the VP for reaching it first and second, and its privilege,
+   * in its holder's colour while in force -- with each side's marker on its box and the boxes both
+   * have passed dimmed; and each side's attempts this turn.
+   */
+  private showSpace() {
+    const s = this.shown;
+    const boxes = spaceRaceBoxes();
+    if (!s || !boxes.length) return;
+    const at = { US: s.space.US, USSR: s.space.USSR };
+    const marker = (side: Seat) => `<span class="sp-marker ${sideCls(side)}">${escapeHtml(sideName(side))}</span>`;
+    const rows = boxes.map(b => {
+      const here = (["US", "USSR"] as Seat[]).filter(side => at[side] === b.box).map(marker).join("");
+      const passed = b.box < Math.min(at.US, at.USSR);
+      let ability = "";
+      if (b.privilege) {
+        const us = at.US >= b.box, ussr = at.USSR >= b.box;
+        const holder: Seat | "" = us && !ussr ? "US" : ussr && !us ? "USSR" : "";
+        const state = holder ? ` <span class="play-dim">· ${t("app:play.spaceHeld", { side: escapeHtml(sideName(holder)) })}</span>`
+          : us && ussr ? ` <span class="play-dim">· ${t("app:play.spaceCancelled")}</span>` : "";
+        ability = `<div class="sp-ability ${holder ? sideCls(holder) : ""}">★ ${escapeHtml(b.ability)}${state}</div>`;
+      }
+      const needs = b.box === 0 ? t("app:play.spaceStart")
+        : t("app:play.spaceNeeds", { ops: b.minOps, roll: b.maxRoll });
+      const vp = b.vpFirst || b.vpSecond ? `<span class="sp-vp">${t("app:play.spaceVp", { first: b.vpFirst, second: b.vpSecond })}</span>` : "";
+      return `<div class="sp-box ${passed ? "sp-passed" : ""}">
+        <div class="sp-line"><span class="sp-n">${b.box}</span><span class="sp-needs">${needs}</span>${vp}<span class="sp-here">${here}</span></div>
+        ${ability}
+      </div>`;
+    }).reverse().join("");
+    const tried = (side: Seat) => `<span class="${sideCls(side)}">${escapeHtml(sideName(side))} ${s.space_turns_used?.[side] ?? 0}</span>`;
+    this.sheet(`<div class="space-sheet">
+      <h2>${t("app:play.spaceRace")}</h2>
+      <p class="play-dim">${t("app:play.spaceAttempts")} ${tried("US")} · ${tried("USSR")}</p>
+      <div class="sp-track">${rows}</div>
+      <p class="play-dim play-legend">${t("app:play.spaceLegend")}</p>
+    </div>`);
   }
 
   /** A country as a card: name (battlegrounds purple), stability, both Influence boxes. A target's
@@ -1087,7 +1127,18 @@ class PlayApp {
       list.map((h, i) => this.entryHtml(h, i, this.expanded.has(i))).reverse().join("");
   }
 
-  /** The other side's plays since your last one, on the board, until you move again. */
+  private get happenedKey(): string {
+    return `ts.play.happened.${this.room || "practice"}`;
+  }
+
+  /** The latest of the other side's plays whose box was dismissed on this device (its step). */
+  private happenedDismissed(): string {
+    try { return localStorage.getItem(this.happenedKey) ?? ""; } catch { return this.happenedMemo; }
+  }
+
+  private happenedMemo = "";
+
+  /** The other side's plays since your last one, on the board, until you move again or dismiss them. */
   private whatHappenedHtml(): string {
     const me = this.me;
     if (!me) return "";
@@ -1096,8 +1147,12 @@ class PlayApp {
     while (k > 0 && list[k - 1].entry.player !== me) k--;
     const since = list.slice(k).filter(h => h.entry.player === otherSeat(me) || h.entry.phase === "TURN_END");
     if (!since.length) return "";
+    // Dismissed: hidden until the other side plays again.
+    const latest = String(since[since.length - 1].step);
+    if (this.happenedDismissed() === latest) return "";
     const shown = since.slice(-5);
-    return `<div class="happened"><div class="play-label">${t("app:play.whatHappened")}</div>
+    return `<div class="happened"><div class="happened-head"><span class="play-label">${t("app:play.whatHappened")}</span>
+        <button class="happened-close" data-dismiss-happened="${latest}" aria-label="${escapeHtml(t("app:play.dismiss"))}">✕</button></div>
       ${shown.map(h => this.entryHtml(h, list.indexOf(h), false)).join("")}
       ${since.length > shown.length ? `<button class="btn btn-secondary" data-tab-go="history">${t("app:play.more", { n: since.length - shown.length })}</button>` : ""}
     </div>`;
@@ -1284,6 +1339,14 @@ class PlayApp {
       }
       if (el.closest("[data-notify]")) return void this.enableNotifications();
       if (el.closest("[data-close-sheet]")) return this.closeSheet();
+      if (el.closest("[data-space]")) return this.showSpace();
+      const happened = el.closest<HTMLElement>("[data-dismiss-happened]");
+      if (happened) {
+        this.happenedMemo = happened.dataset.dismissHappened!;
+        try { localStorage.setItem(this.happenedKey, this.happenedMemo); } catch { /* no storage */ }
+        this.renderMain();
+        return;
+      }
       if (el.closest("[data-resign]")) return this.askResign();
       if (el.closest("[data-resign-confirm]")) return void this.resign();
       if (el.closest("[data-undo]")) return this.undo();

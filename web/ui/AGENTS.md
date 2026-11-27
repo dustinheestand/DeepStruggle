@@ -626,7 +626,10 @@ web/ui/
      engine's scoring counts them (`regionScores`), US blue / USSR red; the standings, the net if
      scored now, where its scoring card is as you may know it (`cardWhere`), the open decision's
      targets there, ● where the other side's last turn changed something (`lastTurnOf`). Above
-     them, *Since your last move*: the other side's plays since yours. A tap opens the region's
+     them, *Since your last move*: the other side's plays since yours (its ✕ hides it on this device
+     until the other side plays again: `ts.play.happened.<room>` keeps the latest step dismissed).
+     A tap on the Space Race block opens the whole track (`showSpace`): each box's Ops and roll, its
+     VP first / second, its privilege in its holder's colour while in force, and both markers. A tap opens the region's
      countries as rows (battleground, stability, the two Influence boxes filled for the
      controller) with the target buttons. Neighbours are not shown: the owner's players know the
      map, and it would crowd the rows.

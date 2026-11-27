@@ -168,6 +168,8 @@ body.play-starting .play-decision { display: none; }
   margin-bottom: 10px;
 }
 .happened .play-label { color: var(--accent); margin-top: 8px; }
+.happened-head { display: flex; align-items: center; }
+.happened-close { margin-left: auto; margin-top: 4px; font: inherit; font-size: 15px; background: none; border: 0; color: var(--text-dim); padding: 4px 8px; }
 
 /* One region's countries */
 .region-head { display: flex; align-items: center; gap: 10px; }
@@ -555,3 +557,20 @@ div.ccard[data-info] { cursor: pointer; }
 .sea-tint { opacity: 0.16; }
 .sea-tint rect { fill: #f59e0b; }
 .sea-key { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; background: rgba(245, 158, 11, 0.35); }
+
+/* The Space Race track (showSpace), top box first. */
+.space[data-space] { cursor: pointer; }
+.sp-track { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.sp-box { border: 1px solid var(--border-color); border-radius: 8px; padding: 6px 8px; background: var(--panel); }
+.sp-passed { opacity: 0.45; }
+.sp-line { display: flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; }
+.sp-n { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--panel-2); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; }
+.sp-needs { font-size: 14px; }
+.sp-vp { font-size: 13px; color: var(--accent); }
+.sp-here { margin-left: auto; display: flex; gap: 4px; }
+.sp-marker { font-size: 11px; font-weight: 800; color: #fff; border-radius: 9px; padding: 1px 7px; }
+.sp-marker.us { background: var(--us-fill); color: #fff; }
+.sp-marker.ussr { background: var(--ussr-fill); color: #fff; }
+.sp-ability { font-size: 13px; margin: 4px 0 0 30px; color: var(--text-dim); }
+.sp-ability.us { color: var(--us); }
+.sp-ability.ussr { color: var(--ussr); }
