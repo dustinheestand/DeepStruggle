@@ -692,7 +692,10 @@ web/ui/
      puts it -- a 2-3 letter code (`ABBR`: DK, BG, BNL, ALG), its stability, both Influence chips --
      fitted to the page's width (across, a blend of its map position and its rank from the left, so
      an outlier like Canada does not squeeze the rest), at most `MAX_H` tall before the cards are
-     pushed apart, mostly downwards, until none overlap. Lines join neighbours in the region; a tag
+     pushed apart, mostly downwards, until none overlap; then a card a neighbour line would pass
+     behind is nudged off it and the cards pushed apart again, and a line still blocked is drawn as a
+     curve around the card (`routeLink`: Europe's UK-France round Benelux, East Germany-Austria round
+     West Germany). Battlegrounds are purple cards on the map and in the grid. Lines join neighbours in the region; a tag
      under a card names its neighbours abroad (`→ALG`); each superpower is a pill placed where its
      dashed lines to the countries beside it are shortest without crossing a card or sitting on a
      neighbour line (Europe's USSR between FI, PL and RO). Southeast Asia is tinted, its counts on a

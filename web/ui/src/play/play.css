@@ -479,7 +479,8 @@ body.play-starting .play-decision { display: none; }
 }
 .ccard-head { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .ccard-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ccard-bg .ccard-name { color: #d8b4fe; }
+.ccard-bg { background: #2a1f4d; border-color: #7c5cc4; }
+.ccard-bg .ccard-name { color: #e2d4ff; }
 .ccard-row { display: grid; grid-template-columns: auto 1fr 1fr; gap: 4px; align-items: center; }
 .ccard-row .stab { margin: 0; }
 .ccard .inf { height: 26px; font-size: 15px; }
@@ -523,7 +524,7 @@ div.ccard[data-info] { cursor: pointer; }
 .view-toggle button.on { background: var(--panel-2); color: var(--text); }
 .rmap { position: relative; margin: 10px auto 0; }
 .rmap-links { position: absolute; inset: 0; pointer-events: none; }
-.rmap-links line { stroke: #475569; stroke-width: 1.5; }
+.rmap-links line, .rmap-links path.link { stroke: #475569; stroke-width: 1.5; fill: none; }
 .mcard {
   position: absolute;
   width: 50px;
@@ -540,7 +541,9 @@ div.ccard[data-info] { cursor: pointer; }
   flex-direction: column;
   justify-content: space-between;
 }
-.mcard-bg .mc-name { color: #c4b5fd; }
+/* A battleground: a purple card, so the ones that score stand out from the rest at a glance. */
+.mcard-bg { background: #2a1f4d; border-color: #7c5cc4; }
+.mcard-bg .mc-name { color: #ddd0ff; }
 .mcard-legal { border: 2px solid var(--accent); padding: 1px 2px; }
 .mc-head { display: flex; align-items: center; gap: 2px; }
 .mc-name { flex: 1; min-width: 0; font-size: 11px; font-weight: 800; line-height: 1.1; white-space: nowrap; }
@@ -560,9 +563,9 @@ div.ccard[data-info] { cursor: pointer; }
 .sp-node.sp-us { background: var(--us-fill); }
 .sp-node.sp-ussr { background: var(--ussr-fill); }
 /* Southeast Asia's countries on Asia's map, and its key in the head. */
-.sea-tint { opacity: 0.16; }
+.sea-tint { opacity: 0.3; }
 .sea-tint rect { fill: #f59e0b; }
-.sea-key { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; background: rgba(245, 158, 11, 0.35); }
+.sea-key { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; background: rgba(245, 158, 11, 0.5); }
 
 /* The Space Race track (showSpace), top box first. */
 .space[data-space] { cursor: pointer; }

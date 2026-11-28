@@ -68,6 +68,8 @@ export interface RegionMap {
   height: number;
   /** Neighbouring pairs within the region. */
   links: Array<[number, number]>;
+  /** Each link's line as an SVG path: straight, or bent around a card it would pass behind. */
+  linkPaths: string[];
   /** Neighbours outside the region, by country: their names, for a tag on the card's edge. */
   away: Map<number, string[]>;
 }
@@ -86,6 +88,46 @@ function crosses(ax: number, ay: number, bx: number, by: number, r: { x: number;
     else { if (t < t0) return false; if (t < t1) t1 = t; }
   }
   return t0 < t1;
+}
+
+/**
+ * The line between two cards' centres -- or, when it would pass behind another card or a superpower
+ * (Europe's UK-France behind Benelux, East Germany-Austria behind West Germany), the gentlest curve
+ * to one side that clears them all: a quadratic Bezier whose control point is pushed off the
+ * midpoint, tried at growing offsets on both sides. Straight if nothing clears.
+ */
+function routeLink(p: MapSpot, q: MapSpot, spots: MapSpot[], superpowers: SuperpowerSpot[]): string {
+  const ax = p.x + CARD_W / 2, ay = p.y + CARD_H / 2, bx = q.x + CARD_W / 2, by = q.y + CARD_H / 2;
+  const straight = `M${ax} ${ay}L${bx} ${by}`;
+  // Each obstacle a little larger than it is drawn, so a line clears it visibly.
+  const m = 3;
+  const boxes = [
+    ...spots.filter(o => o.id !== p.id && o.id !== q.id).map(o => ({ x: o.x - m, y: o.y - m, w: CARD_W + 2 * m, h: CARD_H + 2 * m })),
+    ...superpowers.map(o => ({ x: o.x - m, y: o.y - m, w: SP_W + 2 * m, h: SP_H + 2 * m })),
+  ];
+  const blocked = (pts: Array<[number, number]>) => {
+    for (let i = 1; i < pts.length; i++) {
+      const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
+      if (boxes.some(r => crosses(x0, y0, x1, y1, r, r.w, r.h))) return true;
+    }
+    return false;
+  };
+  if (!blocked([[ax, ay], [bx, by]])) return straight;
+  const len = Math.hypot(bx - ax, by - ay) || 1;
+  const nx = -(by - ay) / len, ny = (bx - ax) / len;
+  const mx = (ax + bx) / 2, my = (ay + by) / 2;
+  for (let k = 10; k <= 120; k += 5) {
+    for (const sgn of [1, -1]) {
+      const cx = mx + sgn * k * nx, cy = my + sgn * k * ny;
+      const pts: Array<[number, number]> = [];
+      for (let i = 0; i <= 24; i++) {
+        const t = i / 24, u = 1 - t;
+        pts.push([u * u * ax + 2 * u * t * cx + t * t * bx, u * u * ay + 2 * u * t * cy + t * t * by]);
+      }
+      if (pts.every(([x]) => x >= 0 && x <= MAP_W) && !blocked(pts)) return `M${ax} ${ay}Q${Math.round(cx)} ${Math.round(cy)} ${bx} ${by}`;
+    }
+  }
+  return straight;
 }
 
 /** How much taller than the map's own proportion a region is laid out, before the cards are pushed
@@ -117,7 +159,7 @@ export function regionMap(region: string): RegionMap {
   // Push overlapping cards apart, each by half the overlap, along the shorter way out -- but never
   // sideways past the width, so a crowded row turns into a column.
   const w = CARD_W + GAP, h = CARD_H + GAP;
-  for (let it = 0; it < 400; it++) {
+  const separate = () => { for (let it = 0; it < 400; it++) {
     let moved = false;
     for (let i = 0; i < spots.length; i++) {
       for (let j = i + 1; j < spots.length; j++) {
@@ -138,12 +180,46 @@ export function regionMap(region: string): RegionMap {
     }
     for (const p of spots) p.x = Math.min(MAP_W - CARD_W, Math.max(0, p.x));
     if (!moved) break;
+  } };
+  separate();
+
+  // A neighbour line should not pass behind a third card (Europe's East Germany-Austria behind West
+  // Germany): such a card is nudged off the line, away from it, and the cards are pushed apart again,
+  // until no line passes behind a card. A line that still does is bent around it when drawn (routeLink).
+  const byName = new Map(MAP_METADATA.countries.map(c => [c.name, c]));
+  const inRegion = new Set(cs.map(c => c.id));
+  const pairs: Array<[MapSpot, MapSpot]> = [];
+  {
+    const sp = new Map(spots.map(p => [p.id, p]));
+    for (const c of cs) for (const n of c.neighbours) {
+      const o = byName.get(n);
+      if (o && inRegion.has(o.id) && c.id < o.id) pairs.push([sp.get(c.id)!, sp.get(o.id)!]);
+    }
+  }
+  for (let round = 0; round < 80; round++) {
+    let nudged = false;
+    for (const [p, q] of pairs) {
+      const ax = p.x + CARD_W / 2, ay = p.y + CARD_H / 2, bx = q.x + CARD_W / 2, by = q.y + CARD_H / 2;
+      for (const o of spots) {
+        if (o === p || o === q || !crosses(ax, ay, bx, by, { x: o.x - 3, y: o.y - 3 }, CARD_W + 6, CARD_H + 6)) continue;
+        // Away from the nearest point of the line, or to its left if the card's centre is on it.
+        const len = Math.hypot(bx - ax, by - ay) || 1;
+        const ox = o.x + CARD_W / 2 - ax, oy = o.y + CARD_H / 2 - ay;
+        const t = (ox * (bx - ax) + oy * (by - ay)) / (len * len);
+        let px = ox - t * (bx - ax), py = oy - t * (by - ay);
+        const d = Math.hypot(px, py);
+        if (d < 0.5) { px = -(by - ay); py = bx - ax; }
+        const k = 4 / (Math.hypot(px, py) || 1);
+        o.x += px * k; o.y += py * k;
+        nudged = true;
+      }
+    }
+    if (!nudged) break;
+    separate();
   }
   const top = Math.min(...spots.map(p => p.y));
   for (const p of spots) { p.x = Math.round(p.x); p.y = Math.round(p.y - top); }
 
-  const byName = new Map(MAP_METADATA.countries.map(c => [c.name, c]));
-  const inRegion = new Set(cs.map(c => c.id));
   const links: Array<[number, number]> = [];
   const away = new Map<number, string[]>();
   for (const c of cs) {
@@ -193,8 +269,9 @@ export function regionMap(region: string): RegionMap {
   for (const p of spots) p.y += band;
   for (const sp of superpowers) sp.y += band;
   const height = Math.max(...spots.map(p => p.y)) + CARD_H;
+  const linkPaths = links.map(([a, b]) => routeLink(at.get(a)!, at.get(b)!, spots, superpowers));
 
-  const out = { spots, superpowers, height, links, away };
+  const out = { spots, superpowers, height, links, linkPaths, away };
   cache.set(region, out);
   return out;
 }

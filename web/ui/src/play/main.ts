@@ -961,10 +961,7 @@ class PlayApp {
     const pad = 7;
     const tint = m.spots.filter(p => seaIds.has(p.id))
       .map(p => `<rect x="${p.x - pad}" y="${p.y - pad}" width="${CARD_W + 2 * pad}" height="${CARD_H + 2 * pad}" rx="10"/>`).join("");
-    const lines = m.links.map(([a, b]) => {
-      const p = at.get(a)!, q = at.get(b)!;
-      return `<line x1="${p.x + CARD_W / 2}" y1="${p.y + CARD_H / 2}" x2="${q.x + CARD_W / 2}" y2="${q.y + CARD_H / 2}"/>`;
-    }).join("") + m.superpowers.flatMap(sp => sp.ids.map(id => {
+    const lines = m.linkPaths.map(d => `<path class="link" d="${d}"/>`).join("") + m.superpowers.flatMap(sp => sp.ids.map(id => {
       const q = at.get(id)!;
       return `<line class="sp-link sp-${sideCls(sp.side)}" x1="${sp.x + SP_W / 2}" y1="${sp.y + SP_H / 2}" x2="${q.x + CARD_W / 2}" y2="${q.y + CARD_H / 2}"/>`;
     })).join("");
