@@ -32,7 +32,7 @@ import { applyWireSteps, sessionSteps, startOnlineGame } from "../game/online_se
 import { PLAY_ENDPOINT } from "../build_info";
 import { CARDS_METADATA, MAP_METADATA } from "../metadata";
 import { escapeHtml } from "../html";
-import { LogLine, isCardArg, isCountryArg, lineHtml, messageHtml, param, strParam } from "../game/log";
+import { LogLine, cardSpan, isCardArg, isCountryArg, lineHtml, messageHtml, param, strParam } from "../game/log";
 import { groupLog } from "../game/log_view";
 import { EFFECT_INFO_MAP, effectText } from "../cards_view";
 import { spaceRaceBoxes } from "../tracks_view";
@@ -1105,7 +1105,7 @@ class PlayApp {
     };
     const card = () => {
       const c = p("card");
-      return isCardArg(c) ? `<span class="log-card" data-card-id="${c.card}">${escapeHtml(cardName(c.card, c.name))}</span>` : escapeHtml(String(c ?? ""));
+      return isCardArg(c) ? cardSpan(c.card, cardName(c.card, c.name)) : escapeHtml(String(c ?? ""));
     };
     const result = p("result");
     const rk = typeof result === "object" && result !== null && "key" in result ? result : null;

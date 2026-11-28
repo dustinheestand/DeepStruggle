@@ -3,6 +3,7 @@ import { CARDS_METADATA } from "./metadata";
 import { branchMeta } from "./game/branches";
 import { ActionLayout, engineLayout, namesByValue } from "./engine/layout";
 import { escapeHtml, num } from "./html";
+import { cardSpan } from "./game/log";
 import { cardDescription, cardName, countryName, regionName, render, sideName, t } from "./i18n";
 import { enumLabel } from "./i18n/enums";
 
@@ -116,6 +117,18 @@ function cardKey(L: ActionLayout, id: number): string {
   return "";
 }
 
+/**
+ * The Space Race box-4 holder's view of the other side's headline: the card by name, as the log
+ * names one (`cardSpan`: play.html puts its side's dot before it and opens the card on a tap). The
+ * box is neutral, not the revealing side's colour: a USSR headline of a US Event (Kitchen Debates)
+ * in a red box read as the USSR's own.
+ */
+function revealBanner(side: "US" | "USSR", card: number): string {
+  const meta = CARDS_METADATA.find(c => c.id === card);
+  const name = meta ? cardSpan(card, cardName(card, meta.name)) : `#${card}`;
+  return `<div class="headline-reveal-box" style="background: rgba(148,163,184,0.12); border: 1px solid rgba(148,163,184,0.4); padding: 6px 10px; border-radius: 4px; margin-bottom: 8px; font-size: 13px;">${t("hud:prompt.headlineRevealed", { side: sideName(side), card: name })}</div>`;
+}
+
 export class ActionHud {
   private container: HTMLElement;
   private onAction: (action: MicroAction) => void;
@@ -189,9 +202,9 @@ export class ActionHud {
       } else if (phaseName === "HEADLINE") {
         let oppHeadlineBanner = "";
         if (playerRaw === "US" && state.headline_ussr_card) {
-          oppHeadlineBanner = `<div class="headline-reveal-box" style="background: rgba(220,53,69,0.15); border: 1px solid rgba(220,53,69,0.4); padding: 6px 10px; border-radius: 4px; margin-bottom: 8px; font-size: 13px;">${t("hud:prompt.headlineRevealed", { side: sideName("USSR"), card: num(state.headline_ussr_card) })}</div>`;
+          oppHeadlineBanner = revealBanner("USSR", num(state.headline_ussr_card));
         } else if (playerRaw === "USSR" && state.headline_us_card) {
-          oppHeadlineBanner = `<div class="headline-reveal-box" style="background: rgba(13,110,253,0.15); border: 1px solid rgba(13,110,253,0.4); padding: 6px 10px; border-radius: 4px; margin-bottom: 8px; font-size: 13px;">${t("hud:prompt.headlineRevealed", { side: sideName("US"), card: num(state.headline_us_card) })}</div>`;
+          oppHeadlineBanner = revealBanner("US", num(state.headline_us_card));
         }
         promptText = `${oppHeadlineBanner}${t("hud:prompt.headline", { player })}`;
       } else {

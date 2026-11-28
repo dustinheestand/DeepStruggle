@@ -92,7 +92,7 @@
   },
   "prompt": {
     "resolvingEventCard": "<strong>{{player}}:</strong> Resolving Event (Card #{{card}}): Select a card:",
-    "headlineRevealed": "📡 <strong>Space Race Privilege (Box 4):</strong> {{side}} revealed Headline: Card #{{card}}",
+    "headlineRevealed": "📡 <strong>Space Race Privilege (Box 4):</strong> {{side}} revealed Headline: {{card}}",
     "headline": "<strong>{{player}} Headline Phase:</strong> Select a card from your hand to play as your Headline:",
     "actionRound": "<strong>{{player}} Action Round {{round}}:</strong> Select a card from your hand to play:",
     "grainSales": "<strong>{{player}}:</strong> <em>Grain Sales to Soviets</em> drew <em>{{card}}</em> from the USSR hand. Play it, or return it and conduct Grain Sales' 2 Ops:",

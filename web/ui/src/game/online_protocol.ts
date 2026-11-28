@@ -32,6 +32,13 @@ export interface AbandonRequest {
   forfeit?: boolean;
 }
 
+/** POST /rooms/<room>/rewind: take the game back to its first `to` steps -- only if it has `from` now,
+ *  so a move made meanwhile is not lost unseen. Each rewind counts up the room's `rewinds`. */
+export interface RewindRequest {
+  to: number;
+  from: number;
+}
+
 /** POST /rooms answers with the room and one secret per seat: the link a player opens. */
 export interface CreateRoomResponse {
   room: string;
@@ -48,6 +55,8 @@ export interface RoomSnapshot {
   side: Seat;
   steps: WireStep[];
   abandoned?: Abandoned;
+  /** How many times the game was taken back (POST /rewind); absent, never. */
+  rewinds?: number;
 }
 
 /** A game one player gave up on, its steps kept: abandoned, it leaves both players' lists; resigned
@@ -64,7 +73,10 @@ export type Presence = "here" | "away" | "offline";
 
 export type ServerMessage =
   /** On connecting, and again whenever the page's view of the list is out of date. */
-  | { t: "sync"; seed: number; engine: string; side: Seat; steps: WireStep[]; online: Record<Seat, boolean>; seen?: Record<Seat, Presence>; abandoned?: Abandoned }
+  | { t: "sync"; seed: number; engine: string; side: Seat; steps: WireStep[]; online: Record<Seat, boolean>; seen?: Record<Seat, Presence>; abandoned?: Abandoned;
+      /** The room's rewind count: a page whose list was made before a rewind starts over from this
+       *  list instead of sending its own steps back. */
+      rewinds?: number }
   /** Steps appended at `at`, by `by`: sent to both pages, so the mover's copy is its ack. */
   | { t: "moves"; at: number; steps: WireStep[]; by: Seat }
   | { t: "presence"; online: Record<Seat, boolean>; seen?: Record<Seat, Presence> }
@@ -81,7 +93,10 @@ export interface NextToMove {
 }
 
 export type ClientMessage =
-  | { t: "move"; at: number; steps: WireStep[]; next?: NextToMove }
+  /** `rewinds`: the rewind count of the list the steps were made on. The relay takes the steps only
+   *  from a page on its own count: after a rewind, a page from before it (which does not send the
+   *  count) cannot put the steps taken back back. */
+  | { t: "move"; at: number; steps: WireStep[]; next?: NextToMove; rewinds?: number }
   /** The page is in front of its player, or not (a background tab, a locked phone). */
   | { t: "visible"; visible: boolean }
   /** The player tapped something (throttled by the page); passed on to the other seat, not kept. */

@@ -24,6 +24,8 @@ export interface RoomData {
   push?: Partial<Record<Seat, PushTarget[]>>;
   /** Set once a player abandons the game: no more moves, no more pushes. */
   abandoned?: Abandoned;
+  /** How many times the game was taken back (rewindRoom). */
+  rewinds?: number;
 }
 
 export interface PushTarget {
@@ -60,7 +62,7 @@ export function seatOf(d: RoomData, secret: string | null): Seat | null {
 
 export function syncMessage(d: RoomData, side: Seat, seen: Record<Seat, Presence>): ServerMessage {
   return { t: "sync", seed: d.seed, engine: d.engine, side, steps: d.steps, online: onlineOf(seen), seen,
-           ...(d.abandoned ? { abandoned: d.abandoned } : {}) };
+           ...(d.abandoned ? { abandoned: d.abandoned } : {}), ...(d.rewinds ? { rewinds: d.rewinds } : {}) };
 }
 
 /** Connected at all, from the presences (what pages before `seen` read). */
@@ -80,7 +82,7 @@ export function presenceOf(sockets: Array<{ side: Seat; visible: boolean }>): Re
 
 export function snapshot(d: RoomData, side: Seat): RoomSnapshot {
   return { room: d.room, seed: d.seed, engine: d.engine, created: d.created, side, steps: d.steps,
-           ...(d.abandoned ? { abandoned: d.abandoned } : {}) };
+           ...(d.abandoned ? { abandoned: d.abandoned } : {}), ...(d.rewinds ? { rewinds: d.rewinds } : {}) };
 }
 
 /** Parse a page's message. */
@@ -98,6 +100,10 @@ export function parseClientMessage(raw: string): ClientMessage | null {
   if (m.t !== "move" || !Number.isInteger(m.at) || !Array.isArray(m.steps)) return null;
   if (m.steps.length === 0 || m.steps.length > MAX_BATCH || !m.steps.every(isWireStep)) return null;
   const msg: ClientMessage = { t: "move", at: m.at as number, steps: m.steps as WireStep[] };
+  if (m.rewinds !== undefined) {
+    if (!Number.isInteger(m.rewinds) || (m.rewinds as number) < 0) return null;
+    msg.rewinds = m.rewinds as number;
+  }
   const n = m.next as NextToMove | undefined;
   if (n !== undefined) {
     if (typeof n !== "object" || n === null || !isSeat(n.side) || typeof n.note !== "string") return null;
@@ -109,8 +115,25 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 /** Append `msg`'s steps if they start where the room is; changes `d` only when they do. */
 export function applyMove(d: RoomData, msg: Extract<ClientMessage, { t: "move" }>, by: Seat): MoveResult {
   if (d.abandoned) return { kind: "bad", why: "the game was abandoned" };
+  // A page from before a rewind: one that does not know of rewinds is refused outright (sent the
+  // list, it would only send the same steps again); one that does is sent the list, and starts over.
+  if ((msg.rewinds ?? 0) !== (d.rewinds ?? 0)) {
+    return msg.rewinds === undefined ? { kind: "bad", why: "the game was taken back: reload the page" } : { kind: "stale" };
+  }
   if (msg.at !== d.steps.length) return { kind: "stale" };
   if (d.steps.length + msg.steps.length > MAX_STEPS) return { kind: "bad", why: "the game is too long" };
   d.steps.push(...msg.steps.map(s => [...s] as WireStep));
   return { kind: "appended", message: { t: "moves", at: msg.at, steps: msg.steps, by } };
+}
+
+/** Take the game back to its first `to` steps, if it has `from` now; changes `d` only then. Returns
+ *  why not, or null. The pages are told by a fresh sync each, which carries the new count. */
+export function rewindRoom(d: RoomData, to: unknown, from: unknown): string | null {
+  if (d.abandoned) return "the game was abandoned";
+  if (!Number.isInteger(to) || !Number.isInteger(from)) return "to and from must be whole numbers";
+  if (from !== d.steps.length) return `the game has ${d.steps.length} steps, not ${from}`;
+  if ((to as number) < 0 || (to as number) >= d.steps.length) return `to must be from 0 to ${d.steps.length - 1}`;
+  d.steps = d.steps.slice(0, to as number);
+  d.rewinds = (d.rewinds ?? 0) + 1;
+  return null;
 }

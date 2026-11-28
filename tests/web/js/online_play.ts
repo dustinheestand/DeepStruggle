@@ -4,7 +4,8 @@
 // runs the play Worker's own room rules (web/play_worker/src/room.ts). Each page moves only for its
 // side, with random legal moves. Midway the USSR page drops off, the US moves while it is away, then
 // the US drops off and makes moves the relay never gets before it comes back; and one page's list is
-// corrupted so the relay's must replace it. The game must end the same on both pages and on a third
+// corrupted so the relay's must replace it; later the game is taken back five steps (POST /rewind)
+// while the USSR page is away, and neither page may send the steps taken back again. The game must end the same on both pages and on a third
 // page that plays the relay's list from the seed.
 import { pathToFileURL } from "node:url";
 import { WasmEngine } from "../../../web/ui/src/engine/wasm_engine";
@@ -12,7 +13,7 @@ import { GameSession } from "../../../web/ui/src/game/session";
 import { Connect, LinkHandlers, OnlineGame, reconcile } from "../../../web/ui/src/game/online";
 import { Seat, ServerMessage, WireStep, sameSteps } from "../../../web/ui/src/game/online_protocol";
 import { applyWireSteps, sessionSteps, startOnlineGame } from "../../../web/ui/src/game/online_session";
-import { RoomData, applyMove, onlineOf, parseClientMessage, presenceOf, seatOf, syncMessage } from "../../../web/play_worker/src/room";
+import { RoomData, applyMove, onlineOf, parseClientMessage, presenceOf, rewindRoom, seatOf, syncMessage } from "../../../web/play_worker/src/room";
 
 const base = pathToFileURL(process.argv[2]).href;
 
@@ -73,6 +74,13 @@ class MemoryRelay {
         },
       };
     };
+  }
+
+  /** POST /rewind, as the Durable Object does it: the list taken back, each page sent it. */
+  rewind(to: number, from: number): string | null {
+    const why = rewindRoom(this.data, to, from);
+    if (!why) for (const o of this.sockets) if (o.open) this.deliver(o, syncMessage(this.data, o.side, this.seen()));
+    return why;
   }
 
   /** Deliver everything in flight (and what that sends). */
@@ -156,6 +164,10 @@ let rebuiltOnCorruption = false;
 let movedWhileAway = 0;
 let movedOffline = 0;
 let refusedForOtherSide = 0;
+let rewound = false;
+let rewindRebuilt = false;
+let oldPageRefused = false;
+let staleRewindRefused = false;
 for (let n = 0; n < 20000 && !us.engine.isTerminal(); n++) {
   const side = decider(us.engine);
   if (!side) throw new Error("no one decides in a game that is not over");
@@ -205,6 +217,27 @@ for (let n = 0; n < 20000 && !us.engine.isTerminal(); n++) {
     rebuiltOnCorruption = !differs || ussr.starts === before + 1;
   }
 
+  // Once: five steps taken back while the USSR page is away (its list still holds them), and the US
+  // page, connected, is told at once. Both start over from the shorter list; a page from before
+  // rewinds, which would send the steps again, is refused.
+  if (!rewound && moves >= 150 && !us.engine.isTerminal()) {
+    rewound = true;
+    const n = relay.data.steps.length;
+    const taken = relay.data.steps.slice(n - 5);
+    const before = { US: us.starts, USSR: ussr.starts };
+    ussr.game.stop();
+    staleRewindRefused = relay.rewind(n - 5, n + 1) !== null && relay.data.steps.length === n;
+    const why = relay.rewind(n - 5, n);
+    if (why) throw new Error(why);
+    relay.pump();
+    ussr.game.start();
+    relay.pump();
+    rewindRebuilt = relay.data.steps.length === n - 5 && us.starts === before.US + 1 && ussr.starts === before.USSR + 1;
+    const copy = structuredClone(relay.data);
+    oldPageRefused = applyMove(copy, { t: "move", at: n - 5, steps: taken.slice(0, 1) }, "US").kind === "bad" &&
+      applyMove(copy, { t: "move", at: n - 5, steps: taken.slice(0, 1), rewinds: 0 }, "US").kind === "stale";
+  }
+
   for (const q of [us, ussr]) {
     if (!sameSteps(sessionSteps(q.session), relay.data.steps)) throw new Error(`the ${q.side} page parted from the relay at move ${moves}`);
   }
@@ -225,5 +258,8 @@ Object.assign(checks, {
   offline_moves_pushed: movedOffline >= 1,
   corruption_rebuilt: corrupted && rebuiltOnCorruption,
   other_side_never_decided: refusedForOtherSide === 0,
+  rewind_rebuilt: rewound && rewindRebuilt,
+  rewind_needs_current_length: staleRewindRefused,
+  rewind_refuses_old_pages: oldPageRefused,
 });
 console.log(JSON.stringify({ checks, steps: steps.length, moves, result: us.session.result, movedWhileAway, movedOffline }));

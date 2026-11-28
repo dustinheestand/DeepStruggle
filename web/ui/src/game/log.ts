@@ -11,12 +11,16 @@
  * a replay's `description`, the stats record's event texts -- is rendered with `lineEnglish`.
  *
  * Shown in the page, a card argument is the hoverable `span.log-card[data-card-id]` that main.ts
- * gives the card's tooltip (`lineHtml`), and every other argument is escaped: a line can come from a
+ * gives the card's tooltip (`lineHtml`), classed by whose Event it is (`log-card-us`, `-ussr`,
+ * `-neutral`: play.html puts a dot of that colour before it), and every other argument is escaped: a line can come from a
  * replay file (its descriptions), which is anyone's text.
  */
 import { escapeHtml } from "../html";
 import { Message, MessageArg, MessageFormat, MessageKey, message, messageIfKnown, render, renderEnglish, sideName } from "../i18n";
+import { CARDS_METADATA } from "../metadata";
 import type { ActionLogItem } from "../types";
+
+const CARD_SIDE = new Map(CARDS_METADATA.map(c => [c.id, c.side]));
 
 /**
  * The mark a line is indented under ("  • "): a change to the board, a die, the headline reveal, a
@@ -103,9 +107,11 @@ export function lineText(l: LogLine): string {
   return withMark(l, render(l.msg));
 }
 
-/** `inner` is text, escaped here. */
-function cardSpan(id: number, inner: string): string {
-  return `<span class="log-card" data-card-id="${id}">${escapeHtml(inner)}</span>`;
+/** A card named in prose, hoverable, classed by its side (us, ussr, neutral). `inner` is text,
+ *  escaped here. */
+export function cardSpan(id: number, inner: string): string {
+  const side = CARD_SIDE.get(id) ?? "neutral";
+  return `<span class="log-card log-card-${side}" data-card-id="${id}">${escapeHtml(inner)}</span>`;
 }
 
 const HTML: MessageFormat = { text: escapeHtml, card: cardSpan };

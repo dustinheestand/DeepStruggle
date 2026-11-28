@@ -91,7 +91,7 @@
   },
   "prompt": {
     "resolvingEventCard": "<strong>{{player}}：</strong>正在结算事件（卡牌 #{{card}}），请选择卡牌：",
-    "headlineRevealed": "📡 <strong>太空竞赛特权（第 4 格）：</strong>{{side}}已展示头条：卡牌 #{{card}}",
+    "headlineRevealed": "📡 <strong>太空竞赛特权（第 4 格）：</strong>{{side}}已展示头条：{{card}}",
     "headline": "<strong>{{player}}头条阶段：</strong>从手牌中选择一张作为头条：",
     "actionRound": "<strong>{{player}}第 {{round}} 行动轮：</strong>选择要打出的手牌：",
     "grainSales": "<strong>{{player}}：</strong><em>向苏联出售谷物</em>从苏联手牌中抽到了<em>{{card}}</em>。可以打出此牌，或归还它并使用向苏联出售谷物的 2 行动点数：",

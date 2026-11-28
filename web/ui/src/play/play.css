@@ -281,6 +281,13 @@ body.play-starting .play-decision { display: none; }
 .roll-no { color: var(--text-dim); font-weight: 600; }
 .entry-lines > div { margin: 2px 0; }
 .log-card { text-decoration: underline dotted; }
+/* Whose Event a card in the prose is: a dot of its side's colour before its name. */
+.log-card-us::before, .log-card-ussr::before, .log-card-neutral::before {
+  content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  margin: 0 4px 0 1px; vertical-align: 1px; background: #94a3b8;
+}
+.log-card-us::before { background: var(--us); }
+.log-card-ussr::before { background: var(--ussr); }
 
 /* ---- the decision ---- */
 .play-decision {

@@ -87,6 +87,8 @@ export class OnlineGame {
   private connected = false;
   /** The relay has, or has been sent, this page's steps up to here. */
   private sent = 0;
+  /** The rewind count of the relay's list this page's list was last brought into line with. */
+  private rewinds = 0;
   private retries = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
@@ -131,7 +133,7 @@ export class OnlineGame {
     while (this.sent < limit) {
       const batch = local.slice(this.sent, Math.min(limit, this.sent + MAX_BATCH));
       const last = this.sent + batch.length >= limit;
-      this.link.send({ t: "move", at: this.sent, steps: batch, ...(last && next ? { next } : {}) });
+      this.link.send({ t: "move", at: this.sent, steps: batch, rewinds: this.rewinds, ...(last && next ? { next } : {}) });
       this.sent += batch.length;
     }
   }
@@ -233,7 +235,12 @@ export class OnlineGame {
         this.engine = m.engine;
         this.host.start(m.seed, m.side, m.engine);
       }
-      const r = reconcile(this.host.steps(), m.steps);
+      // Taken back since this page's list was made: steps beyond the relay's are the ones taken
+      // back, not moves to send, so the page starts over from the relay's list.
+      const rewound = (m.rewinds ?? 0) !== this.rewinds;
+      this.rewinds = m.rewinds ?? 0;
+      let r = reconcile(this.host.steps(), m.steps);
+      if (rewound && r.kind === "push") r = { kind: "rebuild" };
       if (r.kind === "rebuild") {
         this.host.start(m.seed, m.side, m.engine);
       }

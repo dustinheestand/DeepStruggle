@@ -23,6 +23,15 @@ list and pushes each new step to both pages over a WebSocket.
   further moves and tells both pages (`abandoned`); the steps stay. Abandoned, both lists drop it
   and no more pushes go out; resigned (`forfeit: true`), the other side has won, and its phones
   are told so.
+* `POST /rooms/<room>/rewind?seat=<secret>` `{to, from}`: take the game back to its first `to` steps,
+  only if it has `from` now (else 409), so a move made in the meantime is not dropped unseen.
+  There is no button for it: it is for when both players agree to take a move back (a curl
+  from either seat's link). Each rewind increments the room's `rewinds`, and every connected page
+  is sent a fresh `sync`. A page whose list was made before the rewind starts over from the
+  relay's list instead of sending back the steps that were taken back (`reconcile` would
+  otherwise treat them as moves made offline). A `move` carries the page's `rewinds`, and the
+  relay refuses one from a page older than this field, which would only send the steps again,
+  until it is reloaded.
 * `POST /rooms/<room>/push?seat=<secret>` `{subscription, url}`: notify this phone when it is the
   seat's move (at most 4 phones a seat), and `GET /push-key`: the VAPID public key to subscribe with.
   A `move` may carry `next: {side, note}`. When `side` is the other seat and that seat is not

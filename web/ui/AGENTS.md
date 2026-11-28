@@ -316,7 +316,8 @@ web/ui/
      that step.
    - **A card named in the log shows its text on hover** (`game/log.ts` `lineHtml`): every card
      argument of a line's message is rendered as `span.log-card[data-card-id]` around its name in
-     the current language, and one delegated listener on `#action-log-stream` opens the hand tabs'
+     the current language, classed `log-card-us` / `-ussr` / `-neutral` by whose Event it is
+     (play.html shows a dot of that colour before the name; `cardSpan`), and one delegated listener on `#action-log-stream` opens the hand tabs'
      tooltip (`CardsView.showCardTooltip`: Ops, side, era, text). Every other argument is escaped
      (a replay's description is anyone's text), and the lines are the redacted log, so nothing
      hidden is named. The tooltip opens above the pointer where it would run off the bottom.

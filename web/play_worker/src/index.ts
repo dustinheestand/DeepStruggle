@@ -8,15 +8,16 @@
  *   POST /rooms/<room>/push?seat=<secret> {subscription, url} -> tell this phone when it is the seat's move
  *   POST /rooms/<room>/abandon?seat=<secret> {forfeit?} -> give the game up: abandon it (both lists
  *                                                         drop it) or resign it (the other side wins)
+ *   POST /rooms/<room>/rewind?seat=<secret> {to, from} -> take the game back to its first `to` steps
  *   GET  /push-key                                     -> the VAPID public key to subscribe with
  *   GET  /health
  */
 import { DurableObject } from "cloudflare:workers";
 import {
-  AbandonRequest, CreateRoomRequest, CreateRoomResponse, NextToMove, PushKeyResponse, PushPayload, SEAT_NAMES, Seat, ServerMessage, SubscribeRequest,
+  AbandonRequest, CreateRoomRequest, RewindRequest, CreateRoomResponse, NextToMove, PushKeyResponse, PushPayload, SEAT_NAMES, Seat, ServerMessage, SubscribeRequest,
 } from "../../ui/src/game/online_protocol";
 import {
-  RoomData, addPushTarget, applyMove, onlineOf, parseClientMessage, presenceOf, removePushTarget, seatOf, snapshot,
+  RoomData, addPushTarget, applyMove, onlineOf, parseClientMessage, presenceOf, removePushTarget, rewindRoom, seatOf, snapshot,
   syncMessage,
 } from "./room";
 import { isPushEndpoint, isSubscription, sendPush } from "./push";
@@ -118,7 +119,7 @@ export default {
       return json(reply, 200, origin);
     }
 
-    const m = url.pathname.match(/^\/rooms\/([^/]+)(\/ws|\/push|\/abandon)?$/);
+    const m = url.pathname.match(/^\/rooms\/([^/]+)(\/ws|\/push|\/abandon|\/rewind)?$/);
     if (m && ROOM_RE.test(m[1])) {
       const stub = env.ROOMS.get(env.ROOMS.idFromName(m[1]));
       const seat = url.searchParams.get("seat");
@@ -143,6 +144,11 @@ export default {
         const body = await req.json().catch(() => null) as AbandonRequest | null;
         const ok = await stub.abandon(seat, body?.forfeit === true);
         return ok ? json({ ok: true }, 200, origin) : json({ error: "no such room or seat" }, 404, origin);
+      }
+      if (m[2] === "/rewind" && req.method === "POST") {
+        const body = await req.json().catch(() => null) as Partial<Record<keyof RewindRequest, unknown>> | null;
+        const r = await stub.rewind(seat, body?.to, body?.from);
+        return r === null ? json({ ok: true }, 200, origin) : json({ error: r }, r === "no such room or seat" ? 404 : 409, origin);
       }
       if (!m[2] && req.method === "GET") {
         const snap = await stub.read(seat);
@@ -245,6 +251,19 @@ export class Room extends DurableObject<Env> {
       if (forfeit) await this.tell(d, winner, `${side} resigned -- ${winner} wins`);
     }
     return true;
+  }
+
+  /** Take the game back (rewindRoom), then send each page the list: null, or why not. */
+  async rewind(secret: string | null, to: unknown, from: unknown): Promise<string | null> {
+    const d = await this.load();
+    const side = d ? seatOf(d, secret) : null;
+    if (!d || !side) return "no such room or seat";
+    const why = rewindRoom(d, to, from);
+    if (why) return why;
+    await this.save();
+    const seen = this.seen();
+    for (const s of this.sockets()) this.send(s.ws, syncMessage(d, s.a.side, seen));
+    return null;
   }
 
   private sockets(except?: WebSocket): Array<{ ws: WebSocket; a: Attachment }> {

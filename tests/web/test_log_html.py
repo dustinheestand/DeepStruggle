@@ -1,7 +1,7 @@
 """The cards the action log names, made hoverable (web/ui/src/game/log.ts lineHtml).
 
 A log line is a Message whose cards are arguments by id; put into HTML, each card argument is a
-`span.log-card[data-card-id]`, whose hover shows the card's Ops, side and text. The wrapping must
+`span.log-card[data-card-id]`, classed by the card's side, whose hover shows the card's Ops, side and text. The wrapping must
 change nothing else: with the spans taken out and the text unescaped, every heading and line reads
 as its English, and the spans are the message's cards, in order, each under its own name. Checked
 under node on a two-turn game's grouped log -- and in the pseudo-language, where every line is
@@ -19,7 +19,7 @@ import pytest
 
 from tests.web.js_runner import PUBLIC, run_ts
 
-SPAN = re.compile(r'<span class="log-card" data-card-id="(\d+)">(.*?)</span>')
+SPAN = re.compile(r'<span class="log-card log-card-(?:us|ussr|neutral)" data-card-id="(\d+)">(.*?)</span>')
 MARK = re.compile(r"^  (•|🎲|★|✂|⇄|▸) ")
 ZH = Path(__file__).resolve().parents[2] / "web/ui/src/i18n/locales/zh-CN"
 
